@@ -61,7 +61,7 @@ st.markdown(f"""
   .topbar .cin {{ color:{MUTED}; font-size:.9rem; font-weight:500; }}
 
   /* banner (fondo) con esquinas redondeadas */
-  [data-testid="stImage"] img {{ border-radius:16px; box-shadow:0 0 0 1px {LINE}; }}
+  [data-testid="stImage"] img {{ max-width:820px; border-radius:16px; box-shadow:0 0 0 1px {LINE}; }}
 
   .hint {{ color:{MUTED}; font-size:.92rem; margin:22px 0 6px; }}
 
@@ -106,6 +106,10 @@ st.markdown(f"""
   [data-testid="stSidebar"] [data-baseweb="select"] > div {{ background:{BG}; border-color:{LINE}; color:{INK}; }}
   .stTextInput input::placeholder {{ color:#8198C4; opacity:1; }}
   [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {{ color:{MUTED}; }}
+  [data-testid="stExpander"] {{ border:1px solid {LINE}; border-radius:12px; background:{PANEL}; }}
+  [data-testid="stExpander"] summary {{ color:{INK}; }}
+  [data-testid="stExpander"] summary:hover {{ color:{CYAN}; }}
+  [data-testid="stExpander"] summary svg {{ fill:{MUTED}; }}
 </style>
 """, unsafe_allow_html=True)
 
