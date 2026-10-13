@@ -1,18 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-Pregúntale a DayByDay — APP PÚBLICA (lee el cubo en Neon, sin VPN).
+Pregúntale a DayByDay — APP PÚBLICA (identidad job&talent, lee el cubo en Neon).
 
-Deploy en Streamlit Community Cloud. Secrets necesarios:
+Deploy en Streamlit Community Cloud. Secrets:
     DATABASE_URL   = "postgresql://..."
     GROQ_API_KEY   = "gsk_..."
     GEMINI_API_KEY = "..."   (respaldo, opcional)
+Archivos que deben ir en el repo: app_publica.py, motor_nube.py, logos.py,
+marca.py, fondo.jpg, requirements.txt y .streamlit/config.toml
 """
 
 import os
 import streamlit as st
 import plotly.express as px
 
-# Puente: en Streamlit Cloud los secrets llegan por st.secrets -> entorno
 try:
     for _k in ("DATABASE_URL", "GROQ_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"):
         if _k in st.secrets and not os.environ.get(_k):
@@ -21,19 +22,23 @@ except Exception:
     pass
 
 import motor_nube as motor
-
 try:
     from logos import LOGOS
 except Exception:
     LOGOS = {}
+try:
+    from marca import JOBTALENT
+except Exception:
+    JOBTALENT = ""
 
-# ---------- Paleta (teal-forward, disciplinada) ----------
-INK = "#12302C"       # texto / cabecera
-TEAL = "#0A8F80"      # primario
-BRIGHT = "#00C9BC"    # acento (número, barras)
-PANEL = "#EEF5F3"     # tarjetas suaves
-LINE = "#D7E4E0"      # bordes
-MUTED = "#5E726D"     # texto secundario
+# ---------- Paleta job&talent (azul oscuro + cian) ----------
+BG = "#0A1730"
+PANEL = "#10234B"
+LINE = "#24417A"
+CYAN = "#2EA6FF"
+TEAL = "#00E0C7"
+INK = "#EAF2FD"
+MUTED = "#93A9CE"
 
 st.set_page_config(page_title="Pregúntale a DayByDay", page_icon="◆", layout="wide")
 
@@ -41,75 +46,83 @@ st.markdown(f"""
 <style>
   @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
 
-  .stApp {{ background:#FFFFFF; }}
+  .stApp {{ background:{BG}; }}
   .stApp, .block-container, [data-testid="stMarkdownContainer"],
   .stButton button, .stTextInput input, [data-testid="stSidebar"] {{
      font-family:'IBM Plex Sans', system-ui, sans-serif;
   }}
-  .block-container {{ max-width:1060px; padding-top:1.1rem; }}
-
-  /* quitar cromo de Streamlit para look propio */
+  .block-container {{ max-width:1080px; padding-top:.8rem; }}
   #MainMenu, footer, [data-testid="stToolbar"] {{ visibility:hidden; }}
   [data-testid="stHeader"] {{ background:transparent; }}
 
-  /* cabecera: banda teal profunda, plana, con una regla brillante */
-  .hero {{ background:{INK}; color:#EAF4F2; border-radius:18px;
-           padding:26px 32px 30px; position:relative; }}
-  .hero::after {{ content:""; position:absolute; left:32px; bottom:20px;
-                  width:54px; height:4px; background:{BRIGHT}; border-radius:2px; }}
-  .hero h1 {{ margin:0; font-weight:700; font-size:1.62rem; letter-spacing:-.02em; }}
-  .hero p  {{ margin:9px 0 0; color:#9FC3BC; font-size:.98rem; max-width:62ch; line-height:1.5; }}
+  /* barra superior con el logo job&talent */
+  .topbar {{ display:flex; align-items:center; gap:14px; padding:2px 2px 14px; }}
+  .topbar img {{ height:36px; border-radius:8px; display:block; }}
+  .topbar .cin {{ color:{MUTED}; font-size:.9rem; font-weight:500; }}
 
-  .hint {{ color:{MUTED}; font-size:.92rem; margin:20px 0 6px; }}
+  /* banner (fondo) con esquinas redondeadas */
+  [data-testid="stImage"] img {{ border-radius:16px; box-shadow:0 0 0 1px {LINE}; }}
 
-  /* chips de "lo que entendí": info, no decoración */
+  .hint {{ color:{MUTED}; font-size:.92rem; margin:22px 0 6px; }}
+
   .chips {{ margin:4px 0 2px; }}
   .chips .lbl {{ color:{MUTED}; font-size:.9rem; margin-right:8px; }}
-  .chip {{ display:inline-block; background:{PANEL}; color:{TEAL}; border:1px solid {LINE};
+  .chip {{ display:inline-block; background:{PANEL}; color:#BFE0FF; border:1px solid {LINE};
            padding:4px 12px; border-radius:8px; font-size:.82rem; font-weight:500;
            margin:3px 6px 3px 0; }}
 
-  /* número protagónico: acento a la izquierda, no una tarjeta genérica */
-  .kpi {{ border-left:4px solid {BRIGHT}; padding:4px 0 4px 22px; margin:20px 0 6px; }}
-  .kpi .ctx  {{ color:{MUTED}; font-size:.96rem; margin:0 0 7px; }}
-  .kpi .val  {{ font-size:3.1rem; font-weight:700; color:{INK}; line-height:1;
-                letter-spacing:-.025em; font-variant-numeric:tabular-nums; }}
-  .kpi .base {{ color:{MUTED}; font-size:.9rem; margin-top:9px; }}
-
-  .logochip {{ display:inline-flex; align-items:center; background:#fff; border:1px solid {LINE};
-               border-radius:12px; padding:9px 18px; box-shadow:0 1px 3px rgba(18,48,44,.06); }}
+  .logochip {{ display:inline-flex; align-items:center; background:#fff; border-radius:12px;
+               padding:9px 18px; box-shadow:0 2px 10px rgba(0,0,0,.25); }}
   .logochip img {{ height:40px; display:block; }}
   .roster {{ display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:14px 0 2px; }}
   .roster .lbl {{ color:{MUTED}; font-size:.8rem; margin-right:2px; }}
-  .rchip {{ display:inline-flex; align-items:center; background:#fff; border:1px solid {LINE};
-            border-radius:8px; padding:6px 12px; height:38px; }}
+  .rchip {{ display:inline-flex; align-items:center; background:#fff; border-radius:8px;
+            padding:6px 12px; height:38px; }}
   .rchip img {{ height:22px; display:block; }}
 
-  .lectura {{ background:{PANEL}; border-radius:12px; padding:16px 20px;
-              color:{INK}; font-size:.98rem; line-height:1.55; margin:6px 0 2px; }}
+  .kpi {{ border-left:4px solid {CYAN}; padding:4px 0 4px 22px; margin:20px 0 6px; }}
+  .kpi .ctx  {{ color:{MUTED}; font-size:.96rem; margin:0 0 7px; }}
+  .kpi .val  {{ font-size:3.2rem; font-weight:700; color:#F4F9FF; line-height:1;
+                letter-spacing:-.025em; font-variant-numeric:tabular-nums; }}
+  .kpi .base {{ color:{MUTED}; font-size:.9rem; margin-top:9px; }}
+
+  .lectura {{ background:{PANEL}; border:1px solid {LINE}; border-radius:12px;
+              padding:16px 20px; color:{INK}; font-size:.98rem; line-height:1.55; margin:6px 0 2px; }}
+  .lectura b {{ color:#FFFFFF; }}
 
   .pie {{ color:{MUTED}; font-size:.82rem; margin-top:34px; padding-top:14px;
           border-top:1px solid {LINE}; line-height:1.6; }}
 
-  .stButton button {{ background:#fff; border:1px solid {LINE}; color:{INK};
+  .stButton button {{ background:{PANEL}; border:1px solid {LINE}; color:{INK};
                       border-radius:10px; font-weight:500; font-size:.88rem; padding:8px 10px; }}
-  .stButton button:hover {{ border-color:{TEAL}; color:{TEAL}; }}
-  .stTextInput input {{ border-radius:12px; border:1.5px solid {LINE};
+  .stButton button:hover {{ border-color:{CYAN}; color:{CYAN}; }}
+  .stTextInput input {{ background:{PANEL}; border-radius:12px; border:1.5px solid {LINE};
                         font-size:1.03rem; padding:14px 16px; color:{INK}; }}
-  .stTextInput input:focus {{ border-color:{TEAL}; box-shadow:none; }}
+  .stTextInput input:focus {{ border-color:{CYAN}; box-shadow:none; }}
 
   [data-testid="stSidebar"] {{ background:{PANEL}; border-right:1px solid {LINE}; }}
-  [data-testid="stSidebar"] h2 {{ color:{INK}; font-weight:600; font-size:1.05rem; }}
+  [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {{ color:{INK}; font-weight:600; }}
+  [data-testid="stSidebar"] label, [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {{ color:{INK}; }}
+  [data-testid="stSidebar"] [data-baseweb="select"] > div {{ background:{BG}; border-color:{LINE}; color:{INK}; }}
+  .stTextInput input::placeholder {{ color:#8198C4; opacity:1; }}
+  [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {{ color:{MUTED}; }}
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("""
-<div class="hero">
-  <h1>Pregúntale a DayByDay</h1>
-  <p>El buscador del Centro de Inteligencia de Negocios. Escribe lo que quieras
-     saber de la operación y responde con la cifra, el gráfico y una lectura.</p>
-</div>
-""", unsafe_allow_html=True)
+# ---------- Barra superior (job&talent) ----------
+if JOBTALENT:
+    st.markdown(
+        f'<div class="topbar"><img src="{JOBTALENT}">'
+        f'<span class="cin">Centro de Inteligencia de Negocios</span></div>',
+        unsafe_allow_html=True,
+    )
+
+# ---------- Banner ----------
+_BANNER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fondo.jpg")
+if os.path.exists(_BANNER):
+    st.image(_BANNER, use_container_width=True)
+else:
+    st.caption("Falta el banner: pon el archivo fondo.jpg junto a app_publica.py.")
 
 
 @st.cache_data(ttl=1800, show_spinner="Cargando...")
@@ -219,15 +232,15 @@ if dfg.empty:
 top = dfg.head(topn).sort_values("VALOR", ascending=True)
 top["ETIQUETA"] = top["VALOR"].apply(lambda x: motor.fmt_valor(x, m["fmt"]))
 fig = px.bar(top, x="VALOR", y="DIMENSION", orientation="h", text="ETIQUETA",
-             color_discrete_sequence=[BRIGHT])
+             color_discrete_sequence=[CYAN])
 fig.update_traces(textposition="outside", cliponaxis=False,
                   textfont=dict(color=INK, size=12), marker_line_width=0)
 fig.update_layout(
     title=dict(text=f'{m["label"]} por {dim_label} ({cname})',
                font=dict(size=15, color=INK), x=0, xanchor="left"),
     font=dict(family="IBM Plex Sans, sans-serif", color=INK, size=13),
-    plot_bgcolor="white", paper_bgcolor="white",
-    margin=dict(l=0, r=34, t=48, b=4), height=max(300, 36 * len(top) + 80),
+    plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+    margin=dict(l=0, r=36, t=48, b=4), height=max(300, 36 * len(top) + 80),
 )
 fig.update_xaxes(visible=False)
 fig.update_yaxes(showgrid=False, zeroline=False, title=None, ticksuffix="  ",
