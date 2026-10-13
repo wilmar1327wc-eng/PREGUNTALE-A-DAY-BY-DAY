@@ -39,7 +39,7 @@ LINE = "#24417A"
 CYAN = "#2EA6FF"
 TEAL = "#00E0C7"
 INK = "#EAF2FD"
-MUTED = "#93A9CE"
+MUTED = "#B4C7E8"
 
 st.set_page_config(page_title="Pregúntale a DayByDay", page_icon="◆", layout="wide")
 
@@ -106,7 +106,7 @@ st.markdown(f"""
   [data-testid="stSidebar"] label, [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {{ color:{INK}; }}
   [data-testid="stSidebar"] [data-baseweb="select"] > div {{ background:{BG}; border-color:{LINE}; color:{INK}; }}
   .stTextInput input::placeholder {{ color:#8198C4; opacity:1; }}
-  [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {{ color:{MUTED}; }}
+  [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {{ color:{MUTED}; opacity:1; }}
   [data-testid="stExpander"] {{ border:1px solid {LINE}; border-radius:12px; background:{PANEL}; }}
   [data-testid="stExpander"] summary {{ color:{INK}; }}
   [data-testid="stExpander"] summary:hover {{ color:{CYAN}; }}
