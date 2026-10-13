@@ -11,6 +11,7 @@ marca.py, fondo.jpg, requirements.txt y .streamlit/config.toml
 """
 
 import os
+import html as _html
 import streamlit as st
 import plotly.express as px
 
@@ -110,6 +111,16 @@ st.markdown(f"""
   [data-testid="stExpander"] summary {{ color:{INK}; }}
   [data-testid="stExpander"] summary:hover {{ color:{CYAN}; }}
   [data-testid="stExpander"] summary svg {{ fill:{MUTED}; }}
+
+  .dtitle {{ color:{INK}; font-weight:600; font-size:.98rem; margin:16px 0 8px; }}
+  table.dt {{ width:100%; border-collapse:collapse; background:{PANEL};
+              border:1px solid {LINE}; border-radius:12px; overflow:hidden; }}
+  table.dt th {{ text-align:left; color:{MUTED}; font-weight:500; font-size:.8rem;
+                 padding:9px 14px; border-bottom:1px solid {LINE}; }}
+  table.dt td {{ color:{INK}; font-size:.9rem; padding:8px 14px;
+                 border-bottom:1px solid rgba(255,255,255,.06); }}
+  table.dt th.n, table.dt td.n {{ text-align:right; font-variant-numeric:tabular-nums; }}
+  table.dt tr:last-child td {{ border-bottom:none; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -261,12 +272,19 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-tabla = dfg.copy()
-tabla["Valor"] = tabla["VALOR"].apply(lambda x: motor.fmt_valor(x, m["fmt"]))
-tabla = tabla.rename(columns={"DIMENSION": dim_label.capitalize(), "BASE": "Registros"})
-with st.expander(f"Ver el detalle por {dim_label}"):
-    st.dataframe(tabla[[dim_label.capitalize(), "Valor", "Registros"]],
-                 use_container_width=True, hide_index=True)
+st.markdown(f'<div class="dtitle">Detalle por {dim_label}</div>', unsafe_allow_html=True)
+_filas = "".join(
+    f'<tr><td>{_html.escape(str(r["DIMENSION"]))}</td>'
+    f'<td class="n">{motor.fmt_valor(r["VALOR"], m["fmt"])}</td>'
+    f'<td class="n">{motor.fmt_valor(r["BASE"], "num")}</td></tr>'
+    for _, r in dfg.iterrows()
+)
+st.markdown(
+    f'<table class="dt"><thead><tr><th>{_html.escape(dim_label.capitalize())}</th>'
+    f'<th class="n">Valor</th><th class="n">Registros</th></tr></thead>'
+    f'<tbody>{_filas}</tbody></table>',
+    unsafe_allow_html=True,
+)
 
 st.markdown(
     '<div class="pie">Centro de Inteligencia de Negocios de job&amp;talent. '
