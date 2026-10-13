@@ -18,6 +18,10 @@ import psycopg2
 import pandas as pd
 
 MODELO_GEMINI = "gemini-3.8-flash"
+# Groq: 30 req/min gratis. Prueba varios modelos y se queda con el primero que funcione.
+MODELOS_GROQ = ["llama-3.3-70b-versatile", "openai/gpt-oss-20b",
+                "openai/gpt-oss-120b", "llama-3.1-8b-instant"]
+_GROQ_OK = {"modelo": None}   # recuerda el que sirvió
 
 
 # ===================================================================
@@ -199,26 +203,22 @@ def _heuristica(pregunta, marcas):
             "metrica": None, "dimension": dim, "ventana": ven}
 
 
-def _gemini(pregunta, marcas, key):
-    import google.generativeai as genai
-    genai.configure(api_key=key)
+def _prompt(pregunta, marcas):
     cat = {d: {"metricas": list(DOMINIOS[d]["metricas"].keys()),
                "dimensiones": DOMINIOS[d]["dimensiones"]} for d in DOMINIOS}
-    prompt = (
+    return (
         "Eres un intérprete que traduce una pregunta de negocio a JSON. Responde SOLO JSON.\n"
         f"Dominios con métricas y dimensiones válidas: {json.dumps(cat, ensure_ascii=False)}\n"
         f"Clientes disponibles (nombre EXACTO): {list(marcas.keys())}\n"
-        f"Ventanas válidas: {VENTANAS}\n\n"
-        f'Pregunta: "{pregunta}"\n\n'
+        f"Ventanas válidas: {VENTANAS}\n"
         "Devuelve: dominio (uno válido), cliente (nombre exacto o null), "
         "metrica (clave válida del dominio o null), dimension (clave válida o null), "
-        'ventana (de la lista; si no se menciona "6m").'
+        'ventana (de la lista; si no se menciona "6m").\n\n'
+        f'Pregunta: "{pregunta}"'
     )
-    model = genai.GenerativeModel(MODELO_GEMINI)
-    resp = model.generate_content(
-        prompt, generation_config={"response_mime_type": "application/json", "temperature": 0}
-    )
-    data = json.loads(resp.text)
+
+
+def _parse(data, marcas):
     dom = data.get("dominio") if data.get("dominio") in DOMINIOS else "agotados"
     cname = data.get("cliente")
     cids = marcas.get(cname) if cname in marcas else None
@@ -227,14 +227,56 @@ def _gemini(pregunta, marcas, key):
             "ventana": data.get("ventana") if data.get("ventana") in VENTANAS else "6m"}
 
 
-def interpretar(pregunta, marcas):
-    key = api_key()
-    if key:
+def _groq(pregunta, marcas, key):
+    from groq import Groq
+    client = Groq(api_key=key)
+    prompt = _prompt(pregunta, marcas)
+    candidatos = MODELOS_GROQ
+    if _GROQ_OK["modelo"] in MODELOS_GROQ:   # el que ya sirvió va de primero
+        candidatos = [_GROQ_OK["modelo"]] + [m for m in MODELOS_GROQ if m != _GROQ_OK["modelo"]]
+    ultimo = None
+    for modelo in candidatos:
         try:
-            return _gemini(pregunta, marcas, key), "Gemini"
+            resp = client.chat.completions.create(
+                model=modelo,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"}, temperature=0,
+            )
+            _GROQ_OK["modelo"] = modelo
+            return _parse(json.loads(resp.choices[0].message.content), marcas)
         except Exception as e:
-            return _heuristica(pregunta, marcas), f"heurístico (Gemini no respondió: {e})"
-    return _heuristica(pregunta, marcas), "heurístico"
+            ultimo = e
+    raise ultimo
+
+
+def _gemini(pregunta, marcas, key):
+    import google.generativeai as genai
+    genai.configure(api_key=key)
+    model = genai.GenerativeModel(MODELO_GEMINI)
+    resp = model.generate_content(
+        _prompt(pregunta, marcas),
+        generation_config={"response_mime_type": "application/json", "temperature": 0},
+    )
+    return _parse(json.loads(resp.text), marcas)
+
+
+def interpretar(pregunta, marcas):
+    # Prioridad: Groq (30/min) -> Gemini (5/min) -> heurístico
+    errs = []
+    gk = os.environ.get("GROQ_API_KEY")
+    if gk:
+        try:
+            return _groq(pregunta, marcas, gk), "Groq"
+        except Exception as e:
+            errs.append(f"Groq: {e}")
+    gem = api_key()
+    if gem:
+        try:
+            return _gemini(pregunta, marcas, gem), "Gemini"
+        except Exception as e:
+            errs.append(f"Gemini: {e}")
+    suf = f" ({' | '.join(errs)})" if errs else ""
+    return _heuristica(pregunta, marcas), "heurístico" + suf
 
 
 # ===================================================================
