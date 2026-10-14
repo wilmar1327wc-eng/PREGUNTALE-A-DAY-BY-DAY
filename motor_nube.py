@@ -368,3 +368,182 @@ def fmt_valor(v, fmt):
     if fmt == "money":
         return "$ " + f"{v:,.0f}".replace(",", ".")
     return f"{v:,.0f}".replace(",", ".")
+
+
+def fmt_compacto(v, fmt):
+    """Formato corto estilo ejecutivo: $ 4,82 mil M · 128,6 mil · 94,8%."""
+    try:
+        v = float(v)
+    except Exception:
+        return str(v)
+    if fmt == "pct":
+        return f"{v * 100:.1f}".replace(".", ",") + "%"
+    a = abs(v)
+    if fmt == "money":
+        if a >= 1e9:
+            return "$ " + f"{v / 1e9:.2f}".replace(".", ",") + " mil M"
+        if a >= 1e6:
+            return "$ " + f"{v / 1e6:.0f}".replace(",", ".") + " M"
+        if a >= 1e3:
+            return "$ " + f"{v / 1e3:.0f}".replace(",", ".") + " mil"
+        return "$ " + f"{v:,.0f}".replace(",", ".")
+    # número
+    if a >= 1e6:
+        return f"{v / 1e6:.1f}".replace(".", ",") + " M"
+    if a >= 1e3:
+        return f"{v / 1e3:.1f}".replace(".", ",") + " mil"
+    return f"{v:,.0f}".replace(",", ".")
+
+
+def fmt_var(var):
+    """Variación con signo: +12,4% / -1,6% / — (si no hay periodo previo)."""
+    if var is None:
+        return "—", "flat"
+    pct = var * 100
+    signo = "flat"
+    if pct > 0.05:
+        signo = "up"
+    elif pct < -0.05:
+        signo = "down"
+    flecha = "▲" if signo == "up" else ("▼" if signo == "down" else "—")
+    return f"{flecha} {pct:+.1f}%".replace(".", ","), signo
+
+
+# ===================================================================
+# TABLERO EJECUTIVO — todo se calcula desde el cubo existente
+# (marca + período + un desglose por dimensión). No toca el refresco.
+# ===================================================================
+
+# Inicio del periodo actual y del periodo anterior equivalente (SQL Postgres).
+_RANGO = {
+    "hoy":    ("CURRENT_DATE",                          "CURRENT_DATE - 1"),
+    "semana": ("date_trunc('week', CURRENT_DATE)",      "date_trunc('week', CURRENT_DATE) - interval '1 week'"),
+    "mes":    ("date_trunc('month', CURRENT_DATE)",     "date_trunc('month', CURRENT_DATE) - interval '1 month'"),
+    "30d":    ("CURRENT_DATE - 30",                     "CURRENT_DATE - 60"),
+    "3m":     ("CURRENT_DATE - interval '3 months'",    "CURRENT_DATE - interval '6 months'"),
+    "6m":     ("CURRENT_DATE - interval '6 months'",    "CURRENT_DATE - interval '12 months'"),
+    "anio":   ("date_trunc('year', CURRENT_DATE)",      "date_trunc('year', CURRENT_DATE) - interval '1 year'"),
+}
+
+
+def _ids_ph(ids, binds):
+    """Placeholders parametrizados para los cliente_id (seguro, sin inyección)."""
+    ph = []
+    for i, cid in enumerate(ids):
+        k = f"c{i}"
+        binds[k] = int(cid)
+        ph.append(f"%({k})s")
+    return ",".join(ph)
+
+
+def freshness():
+    """Fecha del dato más reciente en el cubo (para 'datos actualizados a ...')."""
+    try:
+        df = run_df("SELECT MAX(dia) AS d FROM cubo_ventas")
+        if not df.empty and df["d"].iloc[0] is not None:
+            return df["d"].iloc[0]
+    except Exception:
+        pass
+    return None
+
+
+def kpi_var(dom, ids, ventana, metrica=None):
+    """Valor del periodo actual + variación vs el periodo anterior equivalente.
+    Una sola consulta (sumas condicionales). var=None si no hay dato previo."""
+    meta = DOMINIOS[dom]
+    key, m = _metrica(dom, metrica)
+    ini_act, ini_prev = _RANGO.get(ventana, _RANGO["6m"])
+    binds = {}
+    idsph = _ids_ph(ids, binds)
+    binds["dim"] = meta["dimension_default"]
+    meds = _medidas(m)
+    sel = [
+        f"SUM(base) FILTER (WHERE dia >= {ini_act}) AS base_act",
+        f"SUM(base) FILTER (WHERE dia >= {ini_prev} AND dia < {ini_act}) AS base_prev",
+    ]
+    for c in meds:
+        sel.append(f"SUM({c}) FILTER (WHERE dia >= {ini_act}) AS {c}_act")
+        sel.append(f"SUM({c}) FILTER (WHERE dia >= {ini_prev} AND dia < {ini_act}) AS {c}_prev")
+    sql = (f"SELECT {', '.join(sel)} FROM {meta['tabla']} "
+           f"WHERE cliente_id IN ({idsph}) AND dimension = %(dim)s AND dia >= {ini_prev}")
+    df = run_df(sql, binds)
+    r = df.iloc[0] if not df.empty else None
+
+    def _val(suf):
+        if r is None:
+            return 0.0, 0
+        base = int(r.get(f"base_{suf}") or 0)
+        if m["tipo"] == "ratio":
+            num = float(r.get(f"{m['num']}_{suf}") or 0)
+            return ((num / base) if base else 0.0), base
+        if m["tipo"] == "sum":
+            return float(r.get(f"{m['col']}_{suf}") or 0), base
+        if m["tipo"] == "avg":
+            num = float(r.get(f"{m['num']}_{suf}") or 0)
+            den = float(r.get(f"{m['den']}_{suf}") or 0)
+            return ((num / den) if den else 0.0), base
+        return float(base), base  # count
+
+    val, base = _val("act")
+    valp, basep = _val("prev")
+    var = ((val - valp) / valp) if (basep > 0 and valp) else None
+    return {"valor": val, "base": base, "valor_prev": valp, "base_prev": basep,
+            "var": var, "metrica": key, "m": m}
+
+
+def serie_tiempo(dom, ids, ventana, metrica=None):
+    """Serie temporal de la métrica. Por día si el rango es corto, por semana si es largo."""
+    meta = DOMINIOS[dom]
+    key, m = _metrica(dom, metrica)
+    ini_act, _ = _RANGO.get(ventana, _RANGO["6m"])
+    gran = "week" if ventana in ("3m", "6m", "anio") else "day"
+    binds = {}
+    idsph = _ids_ph(ids, binds)
+    binds["dim"] = meta["dimension_default"]
+    meds = _medidas(m)
+    sel = [f"date_trunc('{gran}', dia) AS t", "SUM(base) AS base"] + [f"SUM({c}) AS {c}" for c in meds]
+    sql = (f"SELECT {', '.join(sel)} FROM {meta['tabla']} "
+           f"WHERE cliente_id IN ({idsph}) AND dimension = %(dim)s AND dia >= {ini_act} "
+           f"GROUP BY t ORDER BY t")
+    df = run_df(sql, binds)
+    if df.empty:
+        return df
+    df["VALOR"] = df.apply(lambda row: _valor(m, row, int(row["base"] or 0)), axis=1)
+    return df[["t", "VALOR", "base"]].rename(columns={"t": "FECHA", "base": "BASE"})
+
+
+def por_cliente(dom, marcas, ids, ventana, metrica=None):
+    """Métrica por CLIENTE (Unilever, Henkel, ...), agrupando por cliente_id -> nombre."""
+    meta = DOMINIOS[dom]
+    key, m = _metrica(dom, metrica)
+    ini_act, _ = _RANGO.get(ventana, _RANGO["6m"])
+    binds = {}
+    idsph = _ids_ph(ids, binds)
+    binds["dim"] = meta["dimension_default"]
+    meds = _medidas(m)
+    sel = ["cliente_id", "SUM(base) AS base"] + [f"SUM({c}) AS {c}" for c in meds]
+    sql = (f"SELECT {', '.join(sel)} FROM {meta['tabla']} "
+           f"WHERE cliente_id IN ({idsph}) AND dimension = %(dim)s AND dia >= {ini_act} "
+           f"GROUP BY cliente_id")
+    df = run_df(sql, binds)
+    if df.empty:
+        return df
+    id2name = {int(cid): name for name, lst in marcas.items() for cid in lst}
+    df["CLIENTE"] = df["cliente_id"].apply(lambda x: id2name.get(int(x), "(otro)"))
+    agg = {"base": "sum"}
+    for c in meds:
+        agg[c] = "sum"
+    g = df.groupby("CLIENTE", as_index=False).agg(agg)
+    g["VALOR"] = g.apply(lambda row: _valor(m, row, int(row["base"] or 0)), axis=1)
+    g = g.dropna(subset=["VALOR"]).sort_values("VALOR", ascending=False).reset_index(drop=True)
+    return g.rename(columns={"base": "BASE"})[["CLIENTE", "VALOR", "BASE"]]
+
+
+# Métricas rápidas para los chips/preselector (sin IA): etiqueta -> (dominio, metrica)
+PRESET_METRICAS = {
+    "Ventas": ("ventas", "venta_total"),
+    "Cobertura": ("cobertura", "pct_cobertura"),
+    "Agotados": ("agotados", "pct_agotado"),
+    "Precios": ("precios", "precio_promedio"),
+    "Actividades": ("actividades", "num_actividades"),
+}

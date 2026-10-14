@@ -2,19 +2,24 @@
 """
 Pregúntale a DayByDay — APP PÚBLICA (identidad job&talent, lee el cubo en Neon).
 
+Esencia: preguntar y obtener UNA respuesta clara.
+- MENÚ (Marca · Indicador · Período · Ver por): arma la consulta y responde directo
+  del cubo = 0 tokens de IA.
+- PREGUNTA LIBRE: lo único que usa IA (Groq -> Gemini -> heurístico).
+
 Deploy en Streamlit Community Cloud. Secrets:
     DATABASE_URL   = "postgresql://..."
     GROQ_API_KEY   = "gsk_..."
     GEMINI_API_KEY = "..."   (respaldo, opcional)
-Archivos que deben ir en el repo: app_publica.py, motor_nube.py, logos.py,
-marca.py, fondo.jpg, requirements.txt y .streamlit/config.toml
+Archivos en el repo: app_publica.py, motor_nube.py, logos.py, marca.py,
+fondo.jpg, requirements.txt y .streamlit/config.toml
 """
 
 import os
 import html as _html
 import streamlit as st
-import plotly.express as px
 
+# Puente: Secrets de Streamlit -> variables de entorno (para motor_nube)
 try:
     for _k in ("DATABASE_URL", "GROQ_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"):
         if _k in st.secrets and not os.environ.get(_k):
@@ -32,262 +37,350 @@ try:
 except Exception:
     JOBTALENT = ""
 
-# ---------- Paleta job&talent (azul oscuro + cian) ----------
-BG = "#0A1730"
-PANEL = "#10234B"
-LINE = "#24417A"
-CYAN = "#2EA6FF"
-TEAL = "#00E0C7"
-INK = "#EAF2FD"
-MUTED = "#B4C7E8"
+# ---------- Paleta job&talent (teal #00D0C0 sacado del propio logo) ----------
+BG = "#0A1628"
+SURF = "#0F2146"
+SURF2 = "#0C1B3C"
+LINE = "#22406E"
+TEAL = "#00D0C0"
+TEAL_HI = "#35ECD9"
+INK = "#ECF3FF"
+MUTED = "#9DB4DA"
 
-st.set_page_config(page_title="Pregúntale a DayByDay", page_icon="◆", layout="wide")
+MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
+
+st.set_page_config(page_title="Pregúntale a Day by Day", page_icon="◆", layout="wide")
 
 st.markdown(f"""
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
 
-  .stApp {{ background:{BG}; }}
-  .stApp, .block-container, [data-testid="stMarkdownContainer"],
-  .stButton button, .stTextInput input, [data-testid="stSidebar"] {{
-     font-family:'IBM Plex Sans', system-ui, sans-serif;
-  }}
-  .block-container {{ max-width:1080px; padding-top:.8rem; }}
+  .stApp {{ background:
+      radial-gradient(1000px 440px at 88% -8%, rgba(0,208,192,.12), transparent 60%),
+      radial-gradient(760px 360px at -5% 8%, rgba(0,208,192,.05), transparent 55%), {BG}; }}
+  html, body, [data-testid="stMarkdownContainer"], .stButton button, .stTextInput input,
+  [data-baseweb="select"] {{ font-family:'IBM Plex Sans', system-ui, sans-serif; }}
+  .block-container {{ max-width:1060px; padding-top:.7rem; padding-bottom:3rem; }}
   #MainMenu, footer, [data-testid="stToolbar"] {{ visibility:hidden; }}
   [data-testid="stHeader"] {{ background:transparent; }}
 
-  /* barra superior con el logo job&talent */
-  .topbar {{ display:flex; align-items:center; gap:14px; padding:2px 2px 14px; }}
-  .topbar img {{ height:36px; border-radius:8px; display:block; }}
-  .topbar .cin {{ color:{MUTED}; font-size:.9rem; font-weight:500; }}
+  /* ---- barra superior ---- */
+  .top {{ display:flex; align-items:center; justify-content:space-between;
+          padding-bottom:14px; border-bottom:1px solid {LINE}; margin-bottom:18px; }}
+  .top .l {{ display:flex; align-items:center; gap:13px; }}
+  .top .jt {{ height:28px; display:block; }}
+  .top .cin {{ color:{MUTED}; font-size:.9rem; font-weight:500;
+               border-left:1px solid {LINE}; padding-left:13px; }}
+  .upd {{ color:{MUTED}; font-size:.8rem; display:flex; align-items:center; gap:7px; }}
+  .upd .dot {{ width:8px; height:8px; border-radius:50%; background:{TEAL};
+               box-shadow:0 0 0 3px rgba(0,208,192,.18); }}
 
-  /* banner (fondo) con esquinas redondeadas */
-  [data-testid="stImage"] img {{ max-width:820px; border-radius:16px; box-shadow:0 0 0 1px {LINE}; }}
+  /* ---- hero ---- */
+  .hero-title {{ font-family:'Space Grotesk', sans-serif; font-weight:700; color:#FFFFFF;
+      font-size:clamp(2.1rem, 4.3vw, 3.25rem); line-height:1.03; letter-spacing:-.025em; margin:6px 0 0; }}
+  .hero-title .ia {{ font-family:'Space Grotesk'; font-weight:700; font-size:.42em;
+      background:{TEAL}; color:#042220; padding:.18em .5em; border-radius:.42em;
+      vertical-align:.3em; margin-left:.28em; letter-spacing:0; }}
+  .hero-sub {{ color:{MUTED}; font-size:1.05rem; line-height:1.5; margin:15px 0 0; max-width:44ch; }}
+  [data-testid="stImage"] img {{ max-width:330px; margin-left:auto; border-radius:16px;
+      box-shadow:0 0 0 1px {LINE}, 0 16px 38px rgba(0,0,0,.35); }}
 
-  .hint {{ color:{MUTED}; font-size:.92rem; margin:22px 0 6px; }}
+  /* ---- clientes ---- */
+  .clients {{ display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:20px 0 22px; }}
+  .clients .lbl {{ color:{MUTED}; font-size:.84rem; margin-right:4px; }}
+  .lchip {{ display:inline-flex; align-items:center; background:#fff; border-radius:9px;
+            padding:8px 14px; height:40px; }}
+  .lchip img {{ height:22px; display:block; }}
 
-  .chips {{ margin:4px 0 2px; }}
-  .chips .lbl {{ color:{MUTED}; font-size:.9rem; margin-right:8px; }}
-  .chip {{ display:inline-block; background:{PANEL}; color:#BFE0FF; border:1px solid {LINE};
-           padding:4px 12px; border-radius:8px; font-size:.82rem; font-weight:500;
-           margin:3px 6px 3px 0; }}
+  /* ---- menú (contenedor con borde) ---- */
+  [data-testid="stVerticalBlockBorderWrapper"] {{ background:{SURF2}; border:1px solid {LINE};
+      border-radius:16px; padding:16px 20px 18px; box-shadow:inset 0 2px 0 rgba(0,208,192,.10); }}
+  .eye {{ display:flex; align-items:center; gap:9px; margin:2px 0 12px; }}
+  .eye .d {{ width:8px; height:8px; border-radius:50%; background:{TEAL}; }}
+  .eye b {{ color:{INK}; font-size:1rem; font-weight:600; }}
+  .eye span {{ color:{MUTED}; font-size:.85rem; }}
+  .askq {{ color:{MUTED}; font-size:.9rem; margin:14px 0 6px; }}
 
-  .logochip {{ display:inline-flex; align-items:center; background:#fff; border-radius:12px;
-               padding:9px 18px; box-shadow:0 2px 10px rgba(0,0,0,.25); }}
-  .logochip img {{ height:40px; display:block; }}
-  .roster {{ display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:14px 0 2px; }}
-  .roster .lbl {{ color:{MUTED}; font-size:.8rem; margin-right:2px; }}
-  .rchip {{ display:inline-flex; align-items:center; background:#fff; border-radius:8px;
-            padding:6px 12px; height:38px; }}
-  .rchip img {{ height:22px; display:block; }}
+  /* selects */
+  [data-baseweb="select"] > div {{ background:{SURF}; border-color:{LINE}; color:{INK};
+      border-radius:10px; min-height:46px; }}
+  [data-testid="stWidgetLabel"] p {{ color:{MUTED}; font-size:.8rem; }}
 
-  .kpi {{ border-left:4px solid {CYAN}; padding:4px 0 4px 22px; margin:20px 0 6px; }}
-  .kpi .ctx  {{ color:{MUTED}; font-size:.96rem; margin:0 0 7px; }}
-  .kpi .val  {{ font-size:3.2rem; font-weight:700; color:#F4F9FF; line-height:1;
-                letter-spacing:-.025em; font-variant-numeric:tabular-nums; }}
+  /* inputs */
+  .stTextInput input {{ background:{SURF}; border-radius:10px; border:1px solid {LINE};
+      font-size:.96rem; padding:12px 14px; color:{INK}; }}
+  .stTextInput input:focus {{ border-color:{TEAL}; box-shadow:none; }}
+  .stTextInput input::placeholder {{ color:#64789E; opacity:1; }}
+
+  /* botones */
+  .stButton button {{ border-radius:10px; font-weight:600; font-size:.92rem; padding:11px 18px;
+      width:100%; }}
+  .stButton button[kind="primary"] {{ font-family:'Space Grotesk'; background:{TEAL};
+      color:#042220; border:none; font-weight:700; box-shadow:0 6px 18px rgba(0,208,192,.22); }}
+  .stButton button[kind="primary"]:hover {{ background:{TEAL_HI}; color:#042220; }}
+  .stButton button[kind="secondary"] {{ background:transparent; border:1px solid {TEAL};
+      color:{TEAL}; }}
+  .stButton button[kind="secondary"]:hover {{ background:rgba(0,208,192,.08); border-color:{TEAL_HI};
+      color:{TEAL_HI}; }}
+
+  [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {{ color:{MUTED}; opacity:1; }}
+
+  /* ---- respuesta ---- */
+  .membrete {{ display:inline-flex; align-items:center; background:#fff; border-radius:12px;
+               padding:8px 16px; box-shadow:0 2px 12px rgba(0,0,0,.28); }}
+  .membrete img {{ height:30px; display:block; }}
+  .entendi {{ margin:14px 0 2px; display:flex; align-items:center; flex-wrap:wrap; gap:7px; }}
+  .entendi .lbl {{ color:{MUTED}; font-size:.85rem; margin-right:3px; }}
+  .pill {{ background:{SURF}; color:#AFE9E2; border:1px solid {LINE};
+           padding:4px 11px; border-radius:8px; font-size:.8rem; font-weight:500; }}
+  .kpi {{ border-left:4px solid {TEAL}; padding:2px 0 2px 20px; margin:18px 0 8px; }}
+  .kpi .ctx {{ color:{MUTED}; font-size:.95rem; margin:0 0 7px; }}
+  .kpi .val {{ font-family:'Space Grotesk'; font-size:3.3rem; font-weight:700; color:#FFFFFF;
+               line-height:1; letter-spacing:-.02em; }}
   .kpi .base {{ color:{MUTED}; font-size:.9rem; margin-top:9px; }}
 
-  .lectura {{ background:{PANEL}; border:1px solid {LINE}; border-radius:12px;
-              padding:16px 20px; color:{INK}; font-size:.98rem; line-height:1.55; margin:6px 0 2px; }}
-  .lectura b {{ color:#FFFFFF; }}
+  .btitle {{ color:{INK}; font-weight:600; font-size:1rem; margin:22px 0 12px; }}
+  .bar {{ display:grid; grid-template-columns:120px 1fr 92px; align-items:center; gap:12px; margin:9px 0; }}
+  .blab {{ color:{INK}; font-size:.9rem; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+  .btrack {{ background:rgba(255,255,255,.06); border-radius:7px; height:22px; overflow:hidden; }}
+  .bfill {{ display:block; height:100%; border-radius:7px; background:linear-gradient(90deg,#00B6AA,{TEAL}); }}
+  .bval {{ color:{INK}; font-size:.9rem; font-variant-numeric:tabular-nums; }}
 
-  .pie {{ color:{MUTED}; font-size:.82rem; margin-top:34px; padding-top:14px;
+  .lectura {{ background:{SURF}; border:1px solid {LINE}; border-radius:12px;
+              padding:15px 19px; color:{INK}; font-size:.96rem; line-height:1.55; margin:20px 0 0; }}
+  .lectura b {{ color:#fff; }}
+  table.dt {{ width:100%; border-collapse:collapse; margin-top:18px; }}
+  table.dt th {{ text-align:left; color:{MUTED}; font-weight:500; font-size:.78rem;
+                 padding:8px 8px; border-bottom:1px solid {LINE}; }}
+  table.dt td {{ color:{INK}; font-size:.9rem; padding:9px 8px;
+                 border-bottom:1px solid rgba(255,255,255,.06); }}
+  table.dt td.n, table.dt th.n {{ text-align:right; font-variant-numeric:tabular-nums; }}
+  table.dt tr:last-child td {{ border-bottom:none; }}
+  .pie {{ color:{MUTED}; font-size:.8rem; margin-top:30px; padding-top:14px;
           border-top:1px solid {LINE}; line-height:1.6; }}
 
-  .stButton button {{ background:{PANEL}; border:1px solid {LINE}; color:{INK};
-                      border-radius:10px; font-weight:500; font-size:.88rem; padding:8px 10px; }}
-  .stButton button:hover {{ border-color:{CYAN}; color:{CYAN}; }}
-  .stTextInput input {{ background:{PANEL}; border-radius:12px; border:1.5px solid {LINE};
-                        font-size:1.03rem; padding:14px 16px; color:{INK}; }}
-  .stTextInput input:focus {{ border-color:{CYAN}; box-shadow:none; }}
-
-  [data-testid="stSidebar"] {{ background:{PANEL}; border-right:1px solid {LINE}; }}
-  [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {{ color:{INK}; font-weight:600; }}
-  [data-testid="stSidebar"] label, [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {{ color:{INK}; }}
-  [data-testid="stSidebar"] [data-baseweb="select"] > div {{ background:{BG}; border-color:{LINE}; color:{INK}; }}
-  .stTextInput input::placeholder {{ color:#8198C4; opacity:1; }}
-  [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {{ color:{MUTED}; opacity:1; }}
-  [data-testid="stExpander"] {{ border:1px solid {LINE}; border-radius:12px; background:{PANEL}; }}
-  [data-testid="stExpander"] summary {{ color:{INK}; }}
-  [data-testid="stExpander"] summary:hover {{ color:{CYAN}; }}
-  [data-testid="stExpander"] summary svg {{ fill:{MUTED}; }}
-
-  .dtitle {{ color:{INK}; font-weight:600; font-size:.98rem; margin:16px 0 8px; }}
-  table.dt {{ width:100%; border-collapse:collapse; background:{PANEL};
-              border:1px solid {LINE}; border-radius:12px; overflow:hidden; }}
-  table.dt th {{ text-align:left; color:{MUTED}; font-weight:500; font-size:.8rem;
-                 padding:9px 14px; border-bottom:1px solid {LINE}; }}
-  table.dt td {{ color:{INK}; font-size:.9rem; padding:8px 14px;
-                 border-bottom:1px solid rgba(255,255,255,.06); }}
-  table.dt th.n, table.dt td.n {{ text-align:right; font-variant-numeric:tabular-nums; }}
-  table.dt tr:last-child td {{ border-bottom:none; }}
+  @media (max-width:820px) {{ [data-testid="stImage"] img {{ max-width:100%; }} }}
 </style>
 """, unsafe_allow_html=True)
 
-# ---------- Barra superior (job&talent) ----------
-if JOBTALENT:
-    st.markdown(
-        f'<div class="topbar"><img src="{JOBTALENT}">'
-        f'<span class="cin">Centro de Inteligencia de Negocios</span></div>',
-        unsafe_allow_html=True,
-    )
 
-# ---------- Banner ----------
-_BANNER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fondo.jpg")
-if os.path.exists(_BANNER):
-    st.image(_BANNER, use_container_width=True)
-else:
-    st.caption("Falta el banner: pon el archivo fondo.jpg junto a app_publica.py.")
-
-
+# ===================================================================
+# Datos (cacheados)
+# ===================================================================
 @st.cache_data(ttl=1800, show_spinner="Cargando...")
 def cargar_clientes():
     return motor.clientes()
 
+@st.cache_data(ttl=1800, show_spinner=False)
+def c_fresh():
+    return motor.freshness()
 
 try:
     marcas = cargar_clientes()
 except Exception as e:
-    st.error(f"No pude leer el cubo. Revisa la conexión (DATABASE_URL). Detalle: {e}")
+    st.error(f"No pude leer el cubo. Revisa DATABASE_URL en Secrets. Detalle: {e}")
     st.stop()
-
 if not marcas:
-    st.error("El cubo está vacío. Corre el refresco para llenarlo y recarga esta página.")
+    st.error("El cubo está vacío. Corre el refresco (refrescar.bat) y recarga.")
     st.stop()
 
-with st.sidebar:
-    st.subheader("Ajustes")
-    cliente_sel = st.selectbox("Cliente", ["(Detectar desde la pregunta)"] + list(marcas.keys()))
-    ventana_sel = st.selectbox(
-        "Ventana de tiempo", ["(Auto)"] + motor.VENTANAS,
-        format_func=lambda k: "Auto (según la pregunta)" if k == "(Auto)" else motor.VENTANA_LABEL.get(k, k),
-    )
-    topn = st.slider("Máximo de barras", 5, 20, 12)
 
-if "pregunta" not in st.session_state:
-    st.session_state.pregunta = ""
+def fmt(v, f):
+    s = motor.fmt_valor(v, f)
+    return s.replace(".", ",") if f == "pct" else s
 
-def set_q(q):
-    st.session_state.pregunta = q
+def fmt_fecha(d):
+    try:
+        return f"{d.day:02d} {MESES[d.month - 1]} {d.year}"
+    except Exception:
+        return "—"
 
-st.markdown('<div class="hint">Pregunta lo que necesites saber de la operación</div>', unsafe_allow_html=True)
-pregunta = st.text_input(
-    "Tu pregunta", key="pregunta",
-    placeholder="Ej: ¿cómo va el % de agotados de Derco por cadena en los últimos 3 meses?",
-    label_visibility="collapsed",
+
+# ===================================================================
+# Barra superior
+# ===================================================================
+_logo = f'<img class="jt" src="{JOBTALENT}" alt="job&amp;talent">' if JOBTALENT else '<b style="color:#fff">Day by Day</b>'
+st.markdown(
+    f'<div class="top"><div class="l">{_logo}'
+    f'<span class="cin">Centro de Inteligencia de Negocios</span></div>'
+    f'<div class="upd"><span class="dot"></span>Datos actualizados a {fmt_fecha(c_fresh())}</div></div>',
+    unsafe_allow_html=True,
 )
 
-st.caption("O empieza con una de estas:")
-ejemplos = [
-    "¿Cómo va la cobertura de Henkel?",
-    "¿Qué marcas tienen más agotados en Unilever?",
-    "Ventas de Solla por zona este mes",
-    "Actividades de Black & Decker por tipo",
-]
-cols = st.columns(len(ejemplos))
-for c, ex in zip(cols, ejemplos):
-    c.button(ex, on_click=set_q, args=(ex,), use_container_width=True)
 
+# ===================================================================
+# Hero (título grande + fondo pequeño a la derecha)
+# ===================================================================
+hcol1, hcol2 = st.columns([1.45, 0.9], vertical_alignment="center")
+with hcol1:
+    st.markdown(
+        '<div class="hero-title">Pregúntale a<br>Day by Day<span class="ia">+ IA</span></div>'
+        '<div class="hero-sub">Escoge qué quieres ver y te respondo al instante. '
+        'O pregúntame con tus propias palabras.</div>',
+        unsafe_allow_html=True,
+    )
+with hcol2:
+    _BANNER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fondo.jpg")
+    if os.path.exists(_BANNER):
+        st.image(_BANNER, width="stretch")
+
+# Clientes (arriba)
 if LOGOS:
-    _rchips = "".join(f'<span class="rchip"><img src="{u}"></span>' for u in LOGOS.values())
-    st.markdown(f'<div class="roster"><span class="lbl">Clientes</span>{_rchips}</div>',
-                unsafe_allow_html=True)
+    _r = "".join(f'<span class="lchip"><img src="{u}"></span>' for u in LOGOS.values())
+    st.markdown(f'<div class="clients"><span class="lbl">Clientes</span>{_r}</div>', unsafe_allow_html=True)
 
-if not pregunta.strip():
-    st.stop()
 
-intencion, motor_usado = motor.interpretar(pregunta, marcas)
+# ===================================================================
+# Menú de consulta (deterministico, sin IA) + pregunta libre (con IA)
+# ===================================================================
+if "consulta" not in st.session_state:
+    st.session_state.consulta = {"via": "menu"}
 
-if cliente_sel != "(Detectar desde la pregunta)":
-    ids, cname = marcas[cliente_sel], cliente_sel
+def do_menu():
+    st.session_state.consulta = {"via": "menu"}
+
+def do_ia():
+    q = (st.session_state.get("m_free") or "").strip()
+    if not q:
+        return
+    intp, usado = motor.interpretar(q, marcas)
+    st.session_state.consulta = {"via": "ia", "intp": intp, "usado": usado}
+
+op_marca = list(marcas.keys()) + ["Todas las marcas"]
+ind_labels = list(motor.PRESET_METRICAS.keys())
+
+with st.container(border=True):
+    st.markdown(
+        '<div class="eye"><span class="d"></span><b>Consulta rápida</b>'
+        '<span>— respuesta al instante, sin gastar IA</span></div>',
+        unsafe_allow_html=True,
+    )
+    c1, c2, c3, c4, c5 = st.columns([1.15, 1, 1, 1, 0.72], vertical_alignment="bottom")
+    marca_sel = c1.selectbox("Marca / cliente", op_marca, key="m_marca", on_change=do_menu)
+    ind_sel = c2.selectbox("Indicador", ind_labels, key="m_ind", on_change=do_menu)
+    per_sel = c3.selectbox(
+        "Período", motor.VENTANAS, index=motor.VENTANAS.index("3m"), key="m_per",
+        format_func=lambda k: motor.VENTANA_LABEL.get(k, k).capitalize(), on_change=do_menu,
+    )
+    _dom_sel = motor.PRESET_METRICAS[ind_sel][0]
+    _dims = motor.DOMINIOS[_dom_sel]["dimensiones"]
+    _defdim = motor.DOMINIOS[_dom_sel]["dimension_default"]
+    dim_sel = c4.selectbox(
+        "Ver por", _dims, index=_dims.index(_defdim) if _defdim in _dims else 0, key="m_dim",
+        format_func=lambda s: s.replace("_", " ").capitalize(), on_change=do_menu,
+    )
+    c5.button("Consultar", type="primary", on_click=do_menu)
+
+    st.markdown('<div class="askq">¿Algo más puntual? Pregúntame con tus palabras.</div>', unsafe_allow_html=True)
+    f1, f2 = st.columns([1, 0.24], vertical_alignment="bottom")
+    f1.text_input(
+        "Pregunta libre", key="m_free", label_visibility="collapsed",
+        placeholder="Ej: ¿cómo va el % de agotados de Derco por cadena este trimestre?",
+    )
+    f2.button("Preguntar con IA", type="secondary", on_click=do_ia)
+
+
+# ===================================================================
+# Resolver la consulta (menú o IA) -> intención
+# ===================================================================
+cons = st.session_state.get("consulta") or {"via": "menu"}
+usado = None
+
+if cons["via"] == "ia":
+    intp = cons["intp"]
+    dom, metrica, dimension = intp["dominio"], intp["metrica"], intp["dimension"]
+    cname, ids, ventana = intp["cliente_nombre"], intp["cliente_ids"], intp["ventana"]
+    usado = cons.get("usado")
+    if not ids:
+        st.warning("¿De qué marca? Nómbrala en la pregunta, o úsala en el menú de arriba.")
+        st.stop()
+    logo = LOGOS.get((cname or "").strip().upper())
 else:
-    ids, cname = intencion["cliente_ids"], intencion["cliente_nombre"]
+    ind = st.session_state.get("m_ind", ind_labels[0])
+    dom, metrica = motor.PRESET_METRICAS[ind]
+    ventana = st.session_state.get("m_per", "3m")
+    dimension = st.session_state.get("m_dim")
+    dims_ok = motor.DOMINIOS[dom]["dimensiones"]
+    if dimension not in dims_ok:
+        dimension = motor.DOMINIOS[dom]["dimension_default"]
+    marca_name = st.session_state.get("m_marca", op_marca[0])
+    if marca_name == "Todas las marcas":
+        ids = sorted({i for v in marcas.values() for i in v})
+        cname, logo = "Todas las marcas", None
+    else:
+        ids, cname = marcas[marca_name], marca_name
+        logo = LOGOS.get(marca_name.strip().upper())
 
-if not ids:
-    st.warning("¿De qué cliente? Elígelo en la barra lateral o nómbralo en la pregunta.")
-    st.stop()
-
-ventana = intencion["ventana"] if ventana_sel == "(Auto)" else ventana_sel
-dom, metrica, dimension = intencion["dominio"], intencion["metrica"], intencion["dimension"]
 meta = motor.DOMINIOS[dom]
 vlabel = motor.VENTANA_LABEL.get(ventana, ventana)
 
 try:
-    valor, base, mkey, m, sql_kpi = motor.kpi(dom, ids, ventana, metrica)
-    dfg, dkey, m2, sql_grp = motor.por_dimension(dom, ids, ventana, metrica, dimension)
+    valor, base, mkey, m, _ = motor.kpi(dom, ids, ventana, metrica)
+    dfg, dkey, m2, _ = motor.por_dimension(dom, ids, ventana, metrica, dimension)
 except Exception as e:
     st.error(f"Hubo un problema al consultar el cubo: {e}")
     st.stop()
 
-dim_label = dkey.replace("_", " ")
-chips = "".join(f'<span class="chip">{t}</span>' for t in
-                [meta["nombre"], cname, m["label"], f"por {dim_label}", vlabel])
-st.markdown(f'<div class="chips"><span class="lbl">Entendí</span>{chips}</div>', unsafe_allow_html=True)
-st.caption(f"Interpretado con {motor_usado.split(' ')[0]}")
 
-_logo = LOGOS.get(cname.strip().upper())
-if _logo:
-    st.markdown(
-        f'<div style="margin:22px 0 -4px;"><span class="logochip"><img src="{_logo}"></span></div>',
-        unsafe_allow_html=True,
-    )
+# ===================================================================
+# Respuesta
+# ===================================================================
+st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+if logo:
+    st.markdown(f'<span class="membrete"><img src="{logo}"></span>', unsafe_allow_html=True)
+
+dim_label = dkey.replace("_", " ")
+_chips = "".join(f'<span class="pill">{t}</span>' for t in
+                 [meta["nombre"], cname, m["label"], f"por {dim_label}", vlabel])
+st.markdown(f'<div class="entendi"><span class="lbl">Entendí</span>{_chips}</div>', unsafe_allow_html=True)
+st.caption(f"Interpretado con {usado.split(' ')[0]} (IA)" if usado else "Consulta directa al cubo · sin IA")
 
 st.markdown(
     f'<div class="kpi"><div class="ctx">{m["label"]} de {cname}, {vlabel}</div>'
-    f'<div class="val">{motor.fmt_valor(valor, m["fmt"])}</div>'
-    f'<div class="base">sobre {motor.fmt_valor(base, "num")} registros</div></div>',
+    f'<div class="val">{fmt(valor, m["fmt"])}</div>'
+    f'<div class="base">sobre {fmt(base, "num")} registros</div></div>',
     unsafe_allow_html=True,
 )
 
 if dfg.empty:
-    st.markdown('<div class="lectura">No hay registros para esto en la ventana elegida. '
-                'Amplía la ventana de tiempo o cambia el cliente.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="lectura">No hay registros para esto en el período elegido. '
+                'Amplía el período o cambia la marca.</div>', unsafe_allow_html=True)
     st.stop()
 
-top = dfg.head(topn).sort_values("VALOR", ascending=True)
-top["ETIQUETA"] = top["VALOR"].apply(lambda x: motor.fmt_valor(x, m["fmt"]))
-fig = px.bar(top, x="VALOR", y="DIMENSION", orientation="h", text="ETIQUETA",
-             color_discrete_sequence=[CYAN])
-fig.update_traces(textposition="outside", cliponaxis=False,
-                  textfont=dict(color=INK, size=12), marker_line_width=0)
-fig.update_layout(
-    title=dict(text=f'{m["label"]} por {dim_label} ({cname})',
-               font=dict(size=15, color=INK), x=0, xanchor="left"),
-    font=dict(family="IBM Plex Sans, sans-serif", color=INK, size=13),
-    plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-    margin=dict(l=0, r=36, t=48, b=4), height=max(300, 36 * len(top) + 80),
-)
-fig.update_xaxes(visible=False)
-fig.update_yaxes(showgrid=False, zeroline=False, title=None, ticksuffix="  ",
-                 tickfont=dict(color=INK, size=12.5))
-st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+top = dfg.head(12)
+maxv = float(top["VALOR"].max()) or 1.0
+_bars = ""
+for _, r in top.iterrows():
+    w = max(3.0, float(r["VALOR"]) / maxv * 100.0)
+    _bars += (f'<div class="bar"><span class="blab">{_html.escape(str(r["DIMENSION"]))}</span>'
+              f'<span class="btrack"><span class="bfill" style="width:{w:.1f}%"></span></span>'
+              f'<span class="bval">{fmt(r["VALOR"], m["fmt"])}</span></div>')
+st.markdown(f'<div class="btitle">{m["label"]} por {dim_label} ({cname})</div>{_bars}', unsafe_allow_html=True)
 
 alto, bajo = dfg.iloc[0], dfg.iloc[-1]
 st.markdown(
-    f'<div class="lectura">En {vlabel}, <b>{cname}</b> registra '
-    f'<b>{m["label"].lower()}</b> de <b>{motor.fmt_valor(valor, m["fmt"])}</b>. '
-    f'El {dim_label} más alto es <b>{alto["DIMENSION"]}</b> '
-    f'({motor.fmt_valor(alto["VALOR"], m["fmt"])}); el más bajo, <b>{bajo["DIMENSION"]}</b> '
-    f'({motor.fmt_valor(bajo["VALOR"], m["fmt"])}).</div>',
+    f'<div class="lectura">En {vlabel}, <b>{cname}</b> registra <b>{m["label"].lower()}</b> de '
+    f'<b>{fmt(valor, m["fmt"])}</b>. El {dim_label} más alto es '
+    f'<b>{_html.escape(str(alto["DIMENSION"]))}</b> ({fmt(alto["VALOR"], m["fmt"])}); '
+    f'el más bajo, <b>{_html.escape(str(bajo["DIMENSION"]))}</b> ({fmt(bajo["VALOR"], m["fmt"])}).</div>',
     unsafe_allow_html=True,
 )
 
-st.markdown(f'<div class="dtitle">Detalle por {dim_label}</div>', unsafe_allow_html=True)
 _filas = "".join(
     f'<tr><td>{_html.escape(str(r["DIMENSION"]))}</td>'
-    f'<td class="n">{motor.fmt_valor(r["VALOR"], m["fmt"])}</td>'
-    f'<td class="n">{motor.fmt_valor(r["BASE"], "num")}</td></tr>'
+    f'<td class="n">{fmt(r["VALOR"], m["fmt"])}</td>'
+    f'<td class="n">{fmt(r["BASE"], "num")}</td></tr>'
     for _, r in dfg.iterrows()
 )
 st.markdown(
     f'<table class="dt"><thead><tr><th>{_html.escape(dim_label.capitalize())}</th>'
-    f'<th class="n">Valor</th><th class="n">Registros</th></tr></thead>'
+    f'<th class="n">{m["label"]}</th><th class="n">Registros</th></tr></thead>'
     f'<tbody>{_filas}</tbody></table>',
     unsafe_allow_html=True,
 )
 
 st.markdown(
-    '<div class="pie">Centro de Inteligencia de Negocios de job&amp;talent. '
-    'Datos agregados al último refresco; sin información personal.</div>',
+    '<div class="pie">Centro de Inteligencia de Negocios de job&amp;talent · '
+    'Datos agregados al último refresco; sin información personal ni registros individuales.</div>',
     unsafe_allow_html=True,
 )
