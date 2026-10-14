@@ -101,8 +101,9 @@ st.markdown(f"""
   /* ---- clientes ---- */
   .clients {{ display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:20px 0 22px; }}
   .clients .lbl {{ color:{MUTED}; font-size:.84rem; margin-right:4px; }}
-  .lchip {{ display:inline-flex; align-items:center; background:#fff; border-radius:9px;
-            padding:8px 14px; height:40px; }}
+  .lchip {{ display:inline-flex; align-items:center; background:linear-gradient(180deg,#F5FBFB,#E6F3F3);
+            border:1px solid rgba(0,208,192,.5); box-shadow:0 2px 10px rgba(0,208,192,.10);
+            border-radius:9px; padding:8px 14px; height:40px; }}
   .lchip img {{ height:22px; display:block; }}
 
   /* ---- menú (contenedor con borde) ---- */
@@ -139,8 +140,9 @@ st.markdown(f"""
   [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {{ color:{MUTED}; opacity:1; }}
 
   /* ---- respuesta ---- */
-  .membrete {{ display:inline-flex; align-items:center; background:#fff; border-radius:12px;
-               padding:8px 16px; box-shadow:0 2px 12px rgba(0,0,0,.28); }}
+  .membrete {{ display:inline-flex; align-items:center; border-radius:12px; padding:8px 16px;
+               background:linear-gradient(180deg,#F5FBFB,#E6F3F3);
+               border:1px solid rgba(0,208,192,.55); box-shadow:0 2px 14px rgba(0,208,192,.16); }}
   .membrete img {{ height:30px; display:block; }}
   .entendi {{ margin:14px 0 2px; display:flex; align-items:center; flex-wrap:wrap; gap:7px; }}
   .entendi .lbl {{ color:{MUTED}; font-size:.85rem; margin-right:3px; }}
@@ -329,6 +331,15 @@ if not cons:
 
 if cons["via"] == "ia":
     intp = cons["intp"]
+    if not intp.get("en_tema", True):
+        st.markdown(
+            '<div class="empty">Solo respondo sobre la operación de <b>Day by Day</b>: '
+            'cobertura, agotados, precios, ventas y actividades de tus marcas. '
+            'Prueba algo como <b>“cobertura de Henkel por cadena este trimestre”</b>.</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown(PIE, unsafe_allow_html=True)
+        st.stop()
     dom, metrica, dimension = intp["dominio"], intp["metrica"], intp["dimension"]
     cname, ids, ventana = intp["cliente_nombre"], intp["cliente_ids"], intp["ventana"]
     usado = cons.get("usado")
