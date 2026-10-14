@@ -17,6 +17,7 @@ fondo.jpg, requirements.txt y .streamlit/config.toml
 
 import os
 import html as _html
+from datetime import date
 import streamlit as st
 
 # Puente: Secrets de Streamlit -> variables de entorno (para motor_nube)
@@ -36,6 +37,7 @@ try:
     from marca import JOBTALENT
 except Exception:
     JOBTALENT = ""
+import reporte
 
 # ---------- Paleta job&talent (teal #00D0C0 sacado del propio logo) ----------
 BG = "#0A1628"
@@ -143,6 +145,9 @@ st.markdown(f"""
       color:{TEAL}; }}
   .stButton button[kind="secondary"]:hover {{ background:rgba(0,208,192,.08); border-color:{TEAL_HI};
       color:{TEAL_HI}; }}
+  [data-testid="stDownloadButton"] button {{ background:{TEAL}; color:#042220; border:none;
+      border-radius:10px; font-weight:700; font-family:'Space Grotesk'; padding:11px 18px; width:100%; }}
+  [data-testid="stDownloadButton"] button:hover {{ background:{TEAL_HI}; color:#042220; }}
 
   [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {{ color:{MUTED}; opacity:1; }}
 
@@ -207,6 +212,14 @@ def c_fresh():
         pass
     return None
 
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _pdf_bytes(firma, indicador, cliente, periodo, metrica_label, valor_txt, base_txt, filas, insights, fecha):
+    return reporte.construir_pdf(
+        indicador=indicador, cliente=cliente, periodo=periodo, metrica_label=metrica_label,
+        valor_txt=valor_txt, base_txt=base_txt, filas=list(filas), insights=list(insights),
+        jt_datauri=JOBTALENT, cli_datauri=LOGOS.get((cliente or "").strip().upper()), fecha_txt=fecha)
+
 try:
     marcas = cargar_clientes()
 except Exception as e:
@@ -226,6 +239,40 @@ def fmt_fecha(d):
         return f"{d.day:02d} {MESES[d.month - 1]} {d.year}"
     except Exception:
         return "—"
+
+
+def _insights(m, dfg, valor, base, cname, vlabel, dim_label):
+    """Hallazgos automáticos (deterministas, sin IA) a partir de los datos."""
+    out, tipo, f = [], m["tipo"], m["fmt"]
+    out.append(f"El {m['label'].lower()} general de {cname} en {vlabel} es {fmt(valor, f)} "
+               f"sobre {fmt(base, 'num')} registros.")
+    if len(dfg) >= 1:
+        b = dfg.iloc[0]
+        out.append(f"El {dim_label} con mejor desempeño es {b['DIMENSION']} ({fmt(b['VALOR'], f)}).")
+    if len(dfg) >= 2:
+        b, w = dfg.iloc[0], dfg.iloc[-1]
+        if f == "pct":
+            gtxt = f"{(float(b['VALOR']) - float(w['VALOR'])) * 100:.1f}".replace(".", ",") + " puntos porcentuales"
+        else:
+            gtxt = fmt(float(b["VALOR"]) - float(w["VALOR"]), f) + " de diferencia"
+        out.append(f"El más bajo es {w['DIMENSION']} ({fmt(w['VALOR'], f)}); "
+                   f"la brecha con el más alto es de {gtxt}.")
+    if tipo == "sum" and len(dfg) >= 3:
+        tot = float(dfg["VALOR"].sum()) or 1.0
+        t3 = dfg.head(3)
+        sh = f"{float(t3['VALOR'].sum()) / tot * 100:.1f}".replace(".", ",")
+        out.append(f"El top 3 ({', '.join(str(x) for x in t3['DIMENSION'])}) concentra el {sh}% del total.")
+    elif tipo in ("ratio", "avg") and len(dfg) >= 2:
+        below = dfg[dfg["VALOR"].astype(float) < float(valor)]
+        lst = ", ".join(str(x) for x in below["DIMENSION"].head(4))
+        extra = f": {lst}" if lst else ""
+        out.append(f"{len(below)} de {len(dfg)} {dim_label}s están por debajo "
+                   f"del promedio ({fmt(valor, f)}){extra}.")
+    if len(dfg) >= 2:
+        peores = ", ".join(str(x) for x in dfg.tail(2)["DIMENSION"].tolist()[::-1])
+        out.append(f"Reforzar {peores}, con el menor aporte, ayudaría a subir el total."
+                   if tipo == "sum" else f"Priorizar {peores} cerraría buena parte de la brecha.")
+    return out
 
 
 # ===================================================================
@@ -395,6 +442,23 @@ _chips = "".join(f'<span class="pill">{t}</span>' for t in
                  [meta["nombre"], cname, m["label"], f"por {dim_label}", vlabel])
 st.markdown(f'<div class="entendi"><span class="lbl">Entendí</span>{_chips}</div>', unsafe_allow_html=True)
 st.caption(f"Interpretado con {usado.split(' ')[0]} (IA)" if usado else "Consulta directa al cubo · sin IA")
+
+if not dfg.empty:
+    _maxv = float(dfg["VALOR"].max()) or 1.0
+    _filas = tuple((str(r["DIMENSION"]), fmt(r["VALOR"], m["fmt"]),
+                    float(r["VALOR"]) / _maxv, fmt(r["BASE"], "num"))
+                   for _, r in dfg.head(14).iterrows())
+    _ins = tuple(_insights(m, dfg, valor, base, cname, vlabel, dim_label))
+    try:
+        _pdf = _pdf_bytes((dom, tuple(ids), ventana, metrica, dimension, cname),
+                          meta["nombre"], cname, vlabel, m["label"],
+                          fmt(valor, m["fmt"]), fmt(base, "num"), _filas, _ins, fmt_fecha(date.today()))
+        _dc, _ = st.columns([0.42, 0.58])
+        _dc.download_button("⬇  Descargar informe (PDF)", data=_pdf,
+                            file_name=f"Informe {meta['nombre']} - {cname}.pdf",
+                            mime="application/pdf", type="primary")
+    except Exception:
+        st.caption("No pude generar el PDF en este momento.")
 
 st.markdown(
     f'<div class="kpi"><div class="ctx">{m["label"]} de {cname}, {vlabel}</div>'

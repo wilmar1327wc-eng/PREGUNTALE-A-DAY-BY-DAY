@@ -1,6 +1,6 @@
 streamlit
 pandas
-plotly
 psycopg2-binary
 groq
 google-generativeai
+reportlab
