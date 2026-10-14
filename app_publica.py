@@ -49,6 +49,16 @@ MUTED = "#9DB4DA"
 
 MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"]
 
+# Indicadores del menú (etiqueta -> dominio, métrica). Se define AQUÍ para no depender
+# de que motor_nube tenga PRESET_METRICAS: así la app corre aunque el motor sea el viejo.
+PRESET_METRICAS = {
+    "Ventas": ("ventas", "venta_total"),
+    "Cobertura": ("cobertura", "pct_cobertura"),
+    "Agotados": ("agotados", "pct_agotado"),
+    "Precios": ("precios", "precio_promedio"),
+    "Actividades": ("actividades", "num_actividades"),
+}
+
 st.set_page_config(page_title="Pregúntale a Day by Day", page_icon="◆", layout="wide")
 
 st.markdown(f"""
@@ -173,7 +183,15 @@ def cargar_clientes():
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def c_fresh():
-    return motor.freshness()
+    # Fecha del dato más reciente del cubo. Usa run_df (función de siempre del motor)
+    # en vez de una función nueva, para no romper si el motor del repo es el viejo.
+    try:
+        df = motor.run_df("SELECT MAX(dia) AS d FROM cubo_ventas")
+        if not df.empty and df["d"].iloc[0] is not None:
+            return df["d"].iloc[0]
+    except Exception:
+        pass
+    return None
 
 try:
     marcas = cargar_clientes()
@@ -247,7 +265,7 @@ def do_ia():
     st.session_state.consulta = {"via": "ia", "intp": intp, "usado": usado}
 
 op_marca = list(marcas.keys()) + ["Todas las marcas"]
-ind_labels = list(motor.PRESET_METRICAS.keys())
+ind_labels = list(PRESET_METRICAS.keys())
 
 with st.container(border=True):
     st.markdown(
@@ -262,7 +280,7 @@ with st.container(border=True):
         "Período", motor.VENTANAS, index=motor.VENTANAS.index("3m"), key="m_per",
         format_func=lambda k: motor.VENTANA_LABEL.get(k, k).capitalize(), on_change=do_menu,
     )
-    _dom_sel = motor.PRESET_METRICAS[ind_sel][0]
+    _dom_sel = PRESET_METRICAS[ind_sel][0]
     _dims = motor.DOMINIOS[_dom_sel]["dimensiones"]
     _defdim = motor.DOMINIOS[_dom_sel]["dimension_default"]
     dim_sel = c4.selectbox(
@@ -297,7 +315,7 @@ if cons["via"] == "ia":
     logo = LOGOS.get((cname or "").strip().upper())
 else:
     ind = st.session_state.get("m_ind", ind_labels[0])
-    dom, metrica = motor.PRESET_METRICAS[ind]
+    dom, metrica = PRESET_METRICAS[ind]
     ventana = st.session_state.get("m_per", "3m")
     dimension = st.session_state.get("m_dim")
     dims_ok = motor.DOMINIOS[dom]["dimensiones"]
