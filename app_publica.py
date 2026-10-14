@@ -116,14 +116,14 @@ st.markdown(f"""
   .askq {{ color:{MUTED}; font-size:.9rem; margin:14px 0 6px; }}
 
   /* selects */
-  /* Casillas de selección: navy + texto claro y muy legible, aunque no cargue config.toml */
-  div[data-baseweb="select"] > div {{ background:{SURF} !important; border:1px solid {LINE} !important;
-      border-radius:10px; min-height:46px; }}
-  div[data-baseweb="select"] div, div[data-baseweb="select"] span,
-  div[data-baseweb="select"] input {{ color:{INK} !important; -webkit-text-fill-color:{INK} !important; }}
-  div[data-baseweb="select"] svg {{ fill:{MUTED} !important; }}
-  ul[role="listbox"], div[data-baseweb="menu"], div[data-baseweb="popover"] ul {{ background:{SURF} !important; }}
-  li[role="option"] {{ background:{SURF} !important; color:{INK} !important; }}
+  /* Casillas de selección: navy + texto claro. El tema oscuro (config.toml) es lo principal;
+     esto es respaldo por si no carga. Fondo y texto cambian JUNTOS para no quedar ilegibles. */
+  [data-testid="stSelectbox"] > div > div {{ background:{SURF} !important;
+      border:1px solid {LINE} !important; border-radius:10px !important; }}
+  [data-testid="stSelectbox"] > div > div,
+  [data-testid="stSelectbox"] > div > div * {{ color:{INK} !important; -webkit-text-fill-color:{INK} !important; }}
+  [data-testid="stSelectbox"] > div > div svg {{ fill:{MUTED} !important; -webkit-text-fill-color:initial !important; }}
+  ul[role="listbox"], li[role="option"] {{ background:{SURF} !important; color:{INK} !important; }}
   li[role="option"]:hover, li[aria-selected="true"] {{ background:#17315A !important; color:#FFFFFF !important; }}
   [data-testid="stWidgetLabel"] p {{ color:{MUTED}; font-size:.8rem; }}
 
