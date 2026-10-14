@@ -59,6 +59,9 @@ PRESET_METRICAS = {
     "Actividades": ("actividades", "num_actividades"),
 }
 
+PIE = ('<div class="pie">Centro de Inteligencia de Negocios de job&amp;talent · '
+       'Datos agregados al último refresco; sin información personal ni registros individuales.</div>')
+
 st.set_page_config(page_title="Pregúntale a Day by Day", page_icon="◆", layout="wide")
 
 st.markdown(f"""
@@ -166,6 +169,9 @@ st.markdown(f"""
                  border-bottom:1px solid rgba(255,255,255,.06); }}
   table.dt td.n, table.dt th.n {{ text-align:right; font-variant-numeric:tabular-nums; }}
   table.dt tr:last-child td {{ border-bottom:none; }}
+  .empty {{ background:{SURF}; border:1px dashed {LINE}; border-radius:14px;
+            padding:22px 24px; color:{MUTED}; font-size:.98rem; margin-top:8px; line-height:1.5; }}
+  .empty b {{ color:{INK}; }}
   .pie {{ color:{MUTED}; font-size:.8rem; margin-top:30px; padding-top:14px;
           border-top:1px solid {LINE}; line-height:1.6; }}
 
@@ -252,10 +258,17 @@ if LOGOS:
 # Menú de consulta (deterministico, sin IA) + pregunta libre (con IA)
 # ===================================================================
 if "consulta" not in st.session_state:
-    st.session_state.consulta = {"via": "menu"}
+    st.session_state.consulta = None   # arranca limpio: nada hasta que el usuario pida
 
 def do_menu():
-    st.session_state.consulta = {"via": "menu"}
+    # Congela lo elegido en el momento de pulsar Consultar (no reacciona a cambios sueltos)
+    st.session_state.consulta = {
+        "via": "menu",
+        "marca": st.session_state.get("m_marca"),
+        "ind": st.session_state.get("m_ind"),
+        "per": st.session_state.get("m_per"),
+        "dim": st.session_state.get("m_dim"),
+    }
 
 def do_ia():
     q = (st.session_state.get("m_free") or "").strip()
@@ -274,18 +287,18 @@ with st.container(border=True):
         unsafe_allow_html=True,
     )
     c1, c2, c3, c4, c5 = st.columns([1.15, 1, 1, 1, 0.72], vertical_alignment="bottom")
-    marca_sel = c1.selectbox("Marca / cliente", op_marca, key="m_marca", on_change=do_menu)
-    ind_sel = c2.selectbox("Indicador", ind_labels, key="m_ind", on_change=do_menu)
+    marca_sel = c1.selectbox("Marca / cliente", op_marca, key="m_marca")
+    ind_sel = c2.selectbox("Indicador", ind_labels, key="m_ind")
     per_sel = c3.selectbox(
         "Período", motor.VENTANAS, index=motor.VENTANAS.index("3m"), key="m_per",
-        format_func=lambda k: motor.VENTANA_LABEL.get(k, k).capitalize(), on_change=do_menu,
+        format_func=lambda k: motor.VENTANA_LABEL.get(k, k).capitalize(),
     )
     _dom_sel = PRESET_METRICAS[ind_sel][0]
     _dims = motor.DOMINIOS[_dom_sel]["dimensiones"]
     _defdim = motor.DOMINIOS[_dom_sel]["dimension_default"]
     dim_sel = c4.selectbox(
         "Ver por", _dims, index=_dims.index(_defdim) if _defdim in _dims else 0, key="m_dim",
-        format_func=lambda s: s.replace("_", " ").capitalize(), on_change=do_menu,
+        format_func=lambda s: s.replace("_", " ").capitalize(),
     )
     c5.button("Consultar", type="primary", on_click=do_menu)
 
@@ -301,8 +314,18 @@ with st.container(border=True):
 # ===================================================================
 # Resolver la consulta (menú o IA) -> intención
 # ===================================================================
-cons = st.session_state.get("consulta") or {"via": "menu"}
+cons = st.session_state.get("consulta")
 usado = None
+
+# Página limpia: sin respuesta hasta que el usuario pida algo.
+if not cons:
+    st.markdown(
+        '<div class="empty">Elige <b>marca</b>, <b>indicador</b> y <b>período</b>, y pulsa '
+        '<b>Consultar</b>. O escríbeme una pregunta y dale <b>Preguntar con IA</b>.</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(PIE, unsafe_allow_html=True)
+    st.stop()
 
 if cons["via"] == "ia":
     intp = cons["intp"]
@@ -314,20 +337,23 @@ if cons["via"] == "ia":
         st.stop()
     logo = LOGOS.get((cname or "").strip().upper())
 else:
-    ind = st.session_state.get("m_ind", ind_labels[0])
+    ind = cons.get("ind") or ind_labels[0]
     dom, metrica = PRESET_METRICAS[ind]
-    ventana = st.session_state.get("m_per", "3m")
-    dimension = st.session_state.get("m_dim")
+    ventana = cons.get("per") or "3m"
+    dimension = cons.get("dim")
     dims_ok = motor.DOMINIOS[dom]["dimensiones"]
     if dimension not in dims_ok:
         dimension = motor.DOMINIOS[dom]["dimension_default"]
-    marca_name = st.session_state.get("m_marca", op_marca[0])
+    marca_name = cons.get("marca") or op_marca[0]
     if marca_name == "Todas las marcas":
         ids = sorted({i for v in marcas.values() for i in v})
         cname, logo = "Todas las marcas", None
     else:
-        ids, cname = marcas[marca_name], marca_name
+        ids, cname = marcas.get(marca_name, []), marca_name
         logo = LOGOS.get(marca_name.strip().upper())
+    if not ids:
+        st.warning("No encontré esa marca en el cubo.")
+        st.stop()
 
 meta = motor.DOMINIOS[dom]
 vlabel = motor.VENTANA_LABEL.get(ventana, ventana)
@@ -397,8 +423,4 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.markdown(
-    '<div class="pie">Centro de Inteligencia de Negocios de job&amp;talent · '
-    'Datos agregados al último refresco; sin información personal ni registros individuales.</div>',
-    unsafe_allow_html=True,
-)
+st.markdown(PIE, unsafe_allow_html=True)
