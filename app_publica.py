@@ -101,10 +101,10 @@ st.markdown(f"""
   /* ---- clientes ---- */
   .clients {{ display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:20px 0 22px; }}
   .clients .lbl {{ color:{MUTED}; font-size:.84rem; margin-right:4px; }}
-  .lchip {{ display:inline-flex; align-items:center; background:linear-gradient(180deg,#F5FBFB,#E6F3F3);
-            border:1px solid rgba(0,208,192,.5); box-shadow:0 2px 10px rgba(0,208,192,.10);
-            border-radius:9px; padding:8px 14px; height:40px; }}
-  .lchip img {{ height:22px; display:block; }}
+  .lchip {{ display:inline-flex; align-items:center; background:{SURF};
+            border:1px solid {TEAL}; box-shadow:0 0 14px rgba(0,208,192,.18);
+            border-radius:10px; padding:5px 6px; height:44px; }}
+  .lchip img {{ height:24px; display:block; background:#fff; border-radius:6px; padding:5px 10px; }}
 
   /* ---- menú (contenedor con borde) ---- */
   [data-testid="stVerticalBlockBorderWrapper"] {{ background:{SURF2}; border:1px solid {LINE};
@@ -116,8 +116,15 @@ st.markdown(f"""
   .askq {{ color:{MUTED}; font-size:.9rem; margin:14px 0 6px; }}
 
   /* selects */
-  [data-baseweb="select"] > div {{ background:{SURF}; border-color:{LINE}; color:{INK};
+  /* Casillas de selección: navy + texto claro y muy legible, aunque no cargue config.toml */
+  div[data-baseweb="select"] > div {{ background:{SURF} !important; border:1px solid {LINE} !important;
       border-radius:10px; min-height:46px; }}
+  div[data-baseweb="select"] div, div[data-baseweb="select"] span,
+  div[data-baseweb="select"] input {{ color:{INK} !important; -webkit-text-fill-color:{INK} !important; }}
+  div[data-baseweb="select"] svg {{ fill:{MUTED} !important; }}
+  ul[role="listbox"], div[data-baseweb="menu"], div[data-baseweb="popover"] ul {{ background:{SURF} !important; }}
+  li[role="option"] {{ background:{SURF} !important; color:{INK} !important; }}
+  li[role="option"]:hover, li[aria-selected="true"] {{ background:#17315A !important; color:#FFFFFF !important; }}
   [data-testid="stWidgetLabel"] p {{ color:{MUTED}; font-size:.8rem; }}
 
   /* inputs */
@@ -140,10 +147,9 @@ st.markdown(f"""
   [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {{ color:{MUTED}; opacity:1; }}
 
   /* ---- respuesta ---- */
-  .membrete {{ display:inline-flex; align-items:center; border-radius:12px; padding:8px 16px;
-               background:linear-gradient(180deg,#F5FBFB,#E6F3F3);
-               border:1px solid rgba(0,208,192,.55); box-shadow:0 2px 14px rgba(0,208,192,.16); }}
-  .membrete img {{ height:30px; display:block; }}
+  .membrete {{ display:inline-flex; align-items:center; border-radius:12px; padding:6px 8px;
+               background:{SURF}; border:1px solid {TEAL}; box-shadow:0 0 16px rgba(0,208,192,.2); }}
+  .membrete img {{ height:30px; display:block; background:#fff; border-radius:7px; padding:6px 12px; }}
   .entendi {{ margin:14px 0 2px; display:flex; align-items:center; flex-wrap:wrap; gap:7px; }}
   .entendi .lbl {{ color:{MUTED}; font-size:.85rem; margin-right:3px; }}
   .pill {{ background:{SURF}; color:#AFE9E2; border:1px solid {LINE};
