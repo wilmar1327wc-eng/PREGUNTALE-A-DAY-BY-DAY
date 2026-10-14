@@ -38,6 +38,10 @@ try:
 except Exception:
     JOBTALENT = ""
 import reporte
+try:
+    from fondo_app import FONDO
+except Exception:
+    FONDO = ""
 
 # ---------- Paleta job&talent (teal #00D0C0 sacado del propio logo) ----------
 BG = "#0A1628"
@@ -66,13 +70,19 @@ PIE = ('<div class="pie">Centro de Inteligencia de Negocios de job&amp;talent ·
 
 st.set_page_config(page_title="Pregúntale a Day by Day", page_icon="◆", layout="wide")
 
+# Papel tapiz: la imagen de fondo + una capa oscura encima para que todo siga legible.
+if FONDO:
+    _appbg = (f'linear-gradient(rgba(9,20,38,.60), rgba(9,20,38,.80)), '
+              f'url("{FONDO}") center center / cover fixed no-repeat, {BG}')
+else:
+    _appbg = (f'radial-gradient(1000px 440px at 88% -8%, rgba(0,208,192,.12), transparent 60%), '
+              f'radial-gradient(760px 360px at -5% 8%, rgba(0,208,192,.05), transparent 55%), {BG}')
+
 st.markdown(f"""
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
 
-  .stApp {{ background:
-      radial-gradient(1000px 440px at 88% -8%, rgba(0,208,192,.12), transparent 60%),
-      radial-gradient(760px 360px at -5% 8%, rgba(0,208,192,.05), transparent 55%), {BG}; }}
+  .stApp {{ background:{_appbg}; }}
   html, body, [data-testid="stMarkdownContainer"], .stButton button, .stTextInput input,
   [data-baseweb="select"] {{ font-family:'IBM Plex Sans', system-ui, sans-serif; }}
   .block-container {{ max-width:1060px; padding-top:.7rem; padding-bottom:3rem; }}
