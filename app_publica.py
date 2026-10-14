@@ -72,7 +72,7 @@ st.set_page_config(page_title="Pregúntale a Day by Day", page_icon="◆", layou
 
 # Papel tapiz: la imagen de fondo + una capa oscura encima para que todo siga legible.
 if FONDO:
-    _appbg = (f'linear-gradient(rgba(9,20,38,.60), rgba(9,20,38,.80)), '
+    _appbg = (f'linear-gradient(rgba(9,20,38,.50), rgba(9,20,38,.68)), '
               f'url("{FONDO}") center center / cover fixed no-repeat, {BG}')
 else:
     _appbg = (f'radial-gradient(1000px 440px at 88% -8%, rgba(0,208,192,.12), transparent 60%), '
