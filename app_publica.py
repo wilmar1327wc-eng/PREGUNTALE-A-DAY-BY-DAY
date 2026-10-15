@@ -69,6 +69,11 @@ PRESET_METRICAS = {
 PIE = ('<div class="pie">Centro de Inteligencia de Negocios de job&amp;talent · '
        'Datos agregados al último refresco; sin información personal ni registros individuales.</div>')
 
+# Dirección "buena" de cada métrica, para colorear la variación sin mentir:
+#  - en agotados, que SUBA es malo;  - en precios no hay juicio bueno/malo.
+_PEOR_SI_SUBE = {"pct_agotado", "num_agotados"}
+_SIN_JUICIO = {"precio_promedio"}
+
 st.set_page_config(page_title="Pregúntale a Day by Day", page_icon="◆", layout="wide")
 
 # Papel tapiz: la imagen de fondo + una capa oscura encima para que todo siga legible.
@@ -199,7 +204,48 @@ st.markdown(f"""
   .pie {{ color:{MUTED}; font-size:.8rem; margin-top:30px; padding-top:14px;
           border-top:1px solid {LINE}; line-height:1.6; }}
 
-  @media (max-width:820px) {{ [data-testid="stImage"] img {{ max-width:100%; }} }}
+  /* ---- cifras clave (tiles) ---- */
+  .kpis {{ display:grid; grid-template-columns:1.5fr 1fr 1fr 1fr; gap:12px; margin:18px 0 6px; }}
+  .tile {{ background:{SURF2}; border:1px solid {LINE}; border-radius:14px; padding:14px 16px; }}
+  .tile.big {{ border-left:4px solid {TEAL}; }}
+  .tile .tl {{ color:{MUTED}; font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; margin-bottom:7px; }}
+  .tile .tv {{ font-family:'Space Grotesk'; color:#fff; font-size:2.15rem; font-weight:700; line-height:1; letter-spacing:-.02em; }}
+  .tile .tv2 {{ font-family:'Space Grotesk'; color:#fff; font-size:1.32rem; font-weight:700; line-height:1.12; }}
+  .tile .tsub {{ color:{MUTED}; font-size:.82rem; margin-top:5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+  .tvar {{ font-size:.83rem; font-weight:600; margin-top:9px; }}
+  .tvar .vs {{ color:{MUTED}; font-weight:400; font-size:.76rem; }}
+  .tvar.good {{ color:{TEAL_HI}; }} .tvar.bad {{ color:#FF9478; }} .tvar.flat {{ color:{MUTED}; }}
+
+  /* ---- tendencia ---- */
+  .trendwrap {{ margin:22px 0 2px; }}
+  .trend {{ width:100%; height:auto; display:block; }}
+  .trendx {{ display:flex; justify-content:space-between; color:{MUTED}; font-size:.78rem; margin-top:2px; }}
+  .trendx b {{ color:#AFE9E2; font-weight:600; }}
+
+  /* ---- top / bottom ---- */
+  .tb {{ display:grid; grid-template-columns:1fr 1fr; gap:14px; margin:20px 0 4px; }}
+  .tbcol {{ background:{SURF2}; border:1px solid {LINE}; border-radius:14px; padding:13px 16px; }}
+  .tbcol h4 {{ margin:0 0 10px; font-size:.82rem; font-weight:600; display:flex; align-items:center; gap:7px; }}
+  .tbcol.hi h4 {{ color:{TEAL_HI}; }} .tbcol.lo h4 {{ color:{MUTED}; }}
+  .tbrow {{ display:flex; justify-content:space-between; gap:10px; padding:6px 0;
+            border-bottom:1px solid rgba(255,255,255,.05); font-size:.88rem; }}
+  .tbrow:last-child {{ border-bottom:none; }}
+  .tbrow .nm {{ color:{INK}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+  .tbrow .nm .rk {{ color:{MUTED}; margin-right:8px; font-variant-numeric:tabular-nums; }}
+  .tbrow .vl {{ color:#fff; font-variant-numeric:tabular-nums; font-weight:600; white-space:nowrap; }}
+
+  /* ---- hallazgos ---- */
+  .find {{ background:{SURF}; border:1px solid {LINE}; border-left:4px solid {TEAL};
+           border-radius:12px; padding:15px 19px; margin:22px 0 0; }}
+  .find h4 {{ margin:0 0 9px; color:{INK}; font-size:.95rem; font-weight:600; }}
+  .find .fi {{ color:{INK}; font-size:.93rem; line-height:1.5; padding:4px 0 4px 18px; position:relative; }}
+  .find .fi::before {{ content:"●"; color:{TEAL}; position:absolute; left:0; font-size:.62rem; top:.42em; }}
+  .find .fi b {{ color:#fff; }}
+
+  @media (max-width:820px) {{
+    [data-testid="stImage"] img {{ max-width:100%; }}
+    .kpis {{ grid-template-columns:1fr 1fr; }} .tb {{ grid-template-columns:1fr; }}
+  }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -225,11 +271,13 @@ def c_fresh():
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
-def _pdf_bytes(firma, indicador, cliente, periodo, metrica_label, valor_txt, base_txt, filas, insights, fecha):
+def _pdf_bytes(firma, indicador, cliente, periodo, metrica_label, valor_txt, base_txt, filas, insights, fecha,
+               var_txt=None, var_signo="flat", serie=()):
     return reporte.construir_pdf(
         indicador=indicador, cliente=cliente, periodo=periodo, metrica_label=metrica_label,
         valor_txt=valor_txt, base_txt=base_txt, filas=list(filas), insights=list(insights),
-        jt_datauri=JOBTALENT, cli_datauri=LOGOS.get((cliente or "").strip().upper()), fecha_txt=fecha)
+        jt_datauri=JOBTALENT, cli_datauri=LOGOS.get((cliente or "").strip().upper()), fecha_txt=fecha,
+        var_txt=var_txt, var_signo=var_signo, serie=list(serie))
 
 try:
     marcas = cargar_clientes()
@@ -244,6 +292,25 @@ if not marcas:
 def fmt(v, f):
     s = motor.fmt_valor(v, f)
     return s.replace(".", ",") if f == "pct" else s
+
+def fmt_c(v, f):
+    """Formato compacto ejecutivo ($ 4,8 mil M · 128,6 mil · 94,8%); respaldo si el motor es viejo."""
+    fn = getattr(motor, "fmt_compacto", None)
+    try:
+        return fn(v, f) if fn else fmt(v, f)
+    except Exception:
+        return fmt(v, f)
+
+def _plural(w):
+    """Plural en español sencillo: regional->regionales, cadena->cadenas, zona->zonas."""
+    w = str(w)
+    if not w or w[-1] in "sv":
+        return w
+    if w[-1] in "aeiouáéíóú":
+        return w + "s"
+    if w.endswith("z"):
+        return w[:-1] + "ces"
+    return w + "es"
 
 def fmt_fecha(d):
     try:
@@ -284,6 +351,44 @@ def _insights(m, dfg, valor, base, cname, vlabel, dim_label):
         out.append(f"Reforzar {peores}, con el menor aporte, ayudaría a subir el total."
                    if tipo == "sum" else f"Priorizar {peores} cerraría buena parte de la brecha.")
     return out
+
+
+def _svg_tendencia(serie, f):
+    """Mini gráfico de área + línea (SVG) de la evolución en el período.
+    Devuelve (html, pico_txt, f0, f1) o ("", "", "", "") si no hay suficientes puntos."""
+    try:
+        pts = [(r["FECHA"], float(r["VALOR"])) for _, r in serie.iterrows()]
+    except Exception:
+        return "", "", "", ""
+    pts = [(d, v) for d, v in pts if v == v]  # quita NaN
+    if len(pts) < 2:
+        return "", "", "", ""
+    Wv, Hv = 680.0, 120.0
+    pl, pr, pt_, pb = 6.0, 6.0, 12.0, 10.0
+    vals = [v for _, v in pts]
+    vmin, vmax = min(vals), max(vals)
+    rng = (vmax - vmin) or 1.0
+    n = len(pts)
+    def X(i): return pl + (Wv - pl - pr) * (i / (n - 1))
+    def Y(v): return pt_ + (Hv - pt_ - pb) * (1 - (v - vmin) / rng)
+    line = " ".join(f"{X(i):.1f},{Y(v):.1f}" for i, (_, v) in enumerate(pts))
+    area = f"{X(0):.1f},{Hv - pb:.1f} {line} {X(n - 1):.1f},{Hv - pb:.1f}"
+    lx, ly = X(n - 1), Y(pts[-1][1])
+    ipk = max(range(n), key=lambda i: pts[i][1])
+    pkx, pky = X(ipk), Y(pts[ipk][1])
+    svg = (
+        f'<svg viewBox="0 0 {Wv:.0f} {Hv:.0f}" class="trend">'
+        f'<defs><linearGradient id="tg" x1="0" y1="0" x2="0" y2="1">'
+        f'<stop offset="0" stop-color="{TEAL}" stop-opacity="0.30"/>'
+        f'<stop offset="1" stop-color="{TEAL}" stop-opacity="0"/></linearGradient></defs>'
+        f'<polygon points="{area}" fill="url(#tg)"/>'
+        f'<polyline points="{line}" fill="none" stroke="{TEAL}" stroke-width="2.4" '
+        f'stroke-linejoin="round" stroke-linecap="round"/>'
+        f'<circle cx="{pkx:.1f}" cy="{pky:.1f}" r="3.2" fill="{TEAL}" opacity="0.55"/>'
+        f'<circle cx="{lx:.1f}" cy="{ly:.1f}" r="4.2" fill="{TEAL_HI}" stroke="{BG}" stroke-width="2"/>'
+        f'</svg>'
+    )
+    return svg, fmt_c(pts[ipk][1], f), fmt_fecha(pts[0][0]), fmt_fecha(pts[-1][0])
 
 
 # ===================================================================
@@ -454,35 +559,120 @@ _chips = "".join(f'<span class="pill">{t}</span>' for t in
 st.markdown(f'<div class="entendi"><span class="lbl">Entendí</span>{_chips}</div>', unsafe_allow_html=True)
 st.caption(f"Interpretado con {usado.split(' ')[0]} (IA)" if usado else "Consulta directa al cubo · sin IA")
 
-if not dfg.empty:
-    _maxv = float(dfg["VALOR"].max()) or 1.0
-    _filas = tuple((str(r["DIMENSION"]), fmt(r["VALOR"], m["fmt"]),
-                    float(r["VALOR"]) / _maxv, fmt(r["BASE"], "num"))
-                   for _, r in dfg.head(14).iterrows())
-    _ins = tuple(_insights(m, dfg, valor, base, cname, vlabel, dim_label))
-    try:
-        _pdf = _pdf_bytes((dom, tuple(ids), ventana, metrica, dimension, cname),
-                          meta["nombre"], cname, vlabel, m["label"],
-                          fmt(valor, m["fmt"]), fmt(base, "num"), _filas, _ins, fmt_fecha(date.today()))
-        _dc, _ = st.columns([0.42, 0.58])
-        _dc.download_button("⬇  Descargar informe (PDF)", data=_pdf,
-                            file_name=f"Informe {meta['nombre']} - {cname}.pdf",
-                            mime="application/pdf", type="primary")
-    except Exception:
-        st.caption("No pude generar el PDF en este momento.")
+# --- Sin datos: KPI simple y salir ---
+if dfg.empty:
+    st.markdown(
+        f'<div class="kpi"><div class="ctx">{m["label"]} de {cname}, {vlabel}</div>'
+        f'<div class="val">{fmt(valor, m["fmt"])}</div>'
+        f'<div class="base">sobre {fmt(base, "num")} registros</div></div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown('<div class="lectura">No hay registros para esto en el período elegido. '
+                'Amplía el período o cambia la marca.</div>', unsafe_allow_html=True)
+    st.markdown(PIE, unsafe_allow_html=True)
+    st.stop()
 
+# --- Variación vs período anterior + serie de tiempo (con degradación elegante) ---
+var = None
+try:
+    var = motor.kpi_var(dom, ids, ventana, metrica).get("var")
+except Exception:
+    var = None
+try:
+    _vtxt, _vsig = motor.fmt_var(var)
+except Exception:
+    _vtxt, _vsig = "—", "flat"
+_vcls = "flat"
+if _vsig != "flat" and mkey not in _SIN_JUICIO:
+    _vcls = "good" if ((_vsig == "up") != (mkey in _PEOR_SI_SUBE)) else "bad"
+
+serie = None
+try:
+    serie = motor.serie_tiempo(dom, ids, ventana, metrica)
+except Exception:
+    serie = None
+
+alto, bajo = dfg.iloc[0], dfg.iloc[-1]
+n_dim = len(dfg)
+if m["tipo"] in ("sum", "count"):
+    _t4lbl, _t4val = f"Prom. por {dim_label}", fmt_c(float(valor) / n_dim if n_dim else 0, m["fmt"])
+    _t4sub = f"entre {n_dim} {_plural(dim_label)}"
+else:
+    _t4lbl, _t4val, _t4sub = f"{_plural(dim_label).capitalize()} con dato", f"{n_dim}", f"en {vlabel}"
+
+# --- Cifras clave (4 tiles) ---
 st.markdown(
-    f'<div class="kpi"><div class="ctx">{m["label"]} de {cname}, {vlabel}</div>'
-    f'<div class="val">{fmt(valor, m["fmt"])}</div>'
-    f'<div class="base">sobre {fmt(base, "num")} registros</div></div>',
+    f'<div class="kpis">'
+    f'<div class="tile big"><div class="tl">{m["label"]}</div>'
+    f'<div class="tv">{fmt_c(valor, m["fmt"])}</div>'
+    f'<div class="tvar {_vcls}">{_vtxt} <span class="vs">vs. período anterior</span></div></div>'
+    f'<div class="tile"><div class="tl">Más alto</div>'
+    f'<div class="tv2">{fmt_c(alto["VALOR"], m["fmt"])}</div>'
+    f'<div class="tsub">{_html.escape(str(alto["DIMENSION"]))}</div></div>'
+    f'<div class="tile"><div class="tl">Más bajo</div>'
+    f'<div class="tv2">{fmt_c(bajo["VALOR"], m["fmt"])}</div>'
+    f'<div class="tsub">{_html.escape(str(bajo["DIMENSION"]))}</div></div>'
+    f'<div class="tile"><div class="tl">{_t4lbl}</div>'
+    f'<div class="tv2">{_t4val}</div><div class="tsub">{_t4sub}</div></div>'
+    f'</div>',
     unsafe_allow_html=True,
 )
 
-if dfg.empty:
-    st.markdown('<div class="lectura">No hay registros para esto en el período elegido. '
-                'Amplía el período o cambia la marca.</div>', unsafe_allow_html=True)
-    st.stop()
+# --- Informe PDF (un botón) ---
+_maxv = float(dfg["VALOR"].max()) or 1.0
+_filas = tuple((str(r["DIMENSION"]), fmt(r["VALOR"], m["fmt"]),
+                float(r["VALOR"]) / _maxv, fmt(r["BASE"], "num"))
+               for _, r in dfg.head(14).iterrows())
+_ins = tuple(_insights(m, dfg, valor, base, cname, vlabel, dim_label))
+_serie_vals = ()
+if serie is not None and not serie.empty:
+    _serie_vals = tuple(float(x) for x in serie["VALOR"].tolist() if x == x)
+_var_pdf = (f"{var * 100:+.1f}%".replace(".", ",")) if var is not None else None
+try:
+    _pdf = _pdf_bytes((dom, tuple(ids), ventana, metrica, dimension, cname),
+                      meta["nombre"], cname, vlabel, m["label"],
+                      fmt(valor, m["fmt"]), fmt(base, "num"), _filas, _ins, fmt_fecha(date.today()),
+                      _var_pdf, _vcls, _serie_vals)
+    _dc, _ = st.columns([0.46, 0.54])
+    _dc.download_button("⬇  Descargar informe ejecutivo (PDF)", data=_pdf,
+                        file_name=f"Informe {meta['nombre']} - {cname}.pdf",
+                        mime="application/pdf", type="primary")
+except Exception:
+    st.caption("No pude generar el PDF en este momento.")
 
+# --- Tendencia en el tiempo ---
+_svg, _pico, _f0, _f1 = _svg_tendencia(serie, m["fmt"]) if serie is not None else ("", "", "", "")
+if _svg:
+    st.markdown(
+        f'<div class="trendwrap"><div class="btitle">Cómo viene {m["label"].lower()} en {vlabel}</div>'
+        f'{_svg}<div class="trendx"><span>{_f0}</span>'
+        f'<span>pico: <b>{_pico}</b></span><span>{_f1}</span></div></div>',
+        unsafe_allow_html=True,
+    )
+
+# --- Top 5 / Bottom 5 ---
+def _tbrows(df_):
+    out = ""
+    for i, (_, r) in enumerate(df_.iterrows(), 1):
+        out += (f'<div class="tbrow"><span class="nm"><span class="rk">{i}</span>'
+                f'{_html.escape(str(r["DIMENSION"]))}</span>'
+                f'<span class="vl">{fmt(r["VALOR"], m["fmt"])}</span></div>')
+    return out
+# Con pocas dimensiones, partimos sin repetir (top ⌈n/2⌉ / bottom ⌊n/2⌋); con muchas, 5 y 5.
+if n_dim >= 10:
+    _kt = _kb = 5
+else:
+    _kt, _kb = (n_dim + 1) // 2, n_dim // 2
+if _kb >= 1:
+    st.markdown(
+        f'<div class="tb">'
+        f'<div class="tbcol hi"><h4>▲ Top {_kt} más alto · {dim_label}</h4>{_tbrows(dfg.head(_kt))}</div>'
+        f'<div class="tbcol lo"><h4>▼ {_kb} más bajo · {dim_label}</h4>{_tbrows(dfg.tail(_kb).iloc[::-1])}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+# --- Desglose (barras) ---
 top = dfg.head(12)
 maxv = float(top["VALOR"].max()) or 1.0
 _bars = ""
@@ -493,26 +683,23 @@ for _, r in top.iterrows():
               f'<span class="bval">{fmt(r["VALOR"], m["fmt"])}</span></div>')
 st.markdown(f'<div class="btitle">{m["label"]} por {dim_label} ({cname})</div>{_bars}', unsafe_allow_html=True)
 
-alto, bajo = dfg.iloc[0], dfg.iloc[-1]
-st.markdown(
-    f'<div class="lectura">En {vlabel}, <b>{cname}</b> registra <b>{m["label"].lower()}</b> de '
-    f'<b>{fmt(valor, m["fmt"])}</b>. El {dim_label} más alto es '
-    f'<b>{_html.escape(str(alto["DIMENSION"]))}</b> ({fmt(alto["VALOR"], m["fmt"])}); '
-    f'el más bajo, <b>{_html.escape(str(bajo["DIMENSION"]))}</b> ({fmt(bajo["VALOR"], m["fmt"])}).</div>',
-    unsafe_allow_html=True,
-)
+# --- Hallazgos (ahora visibles en la app, no solo en el PDF) ---
+_fi = "".join(f'<div class="fi">{_html.escape(t)}</div>' for t in _ins)
+st.markdown(f'<div class="find"><h4>Hallazgos</h4>{_fi}</div>', unsafe_allow_html=True)
 
-_filas = "".join(
-    f'<tr><td>{_html.escape(str(r["DIMENSION"]))}</td>'
-    f'<td class="n">{fmt(r["VALOR"], m["fmt"])}</td>'
-    f'<td class="n">{fmt(r["BASE"], "num")}</td></tr>'
-    for _, r in dfg.iterrows()
-)
-st.markdown(
-    f'<table class="dt"><thead><tr><th>{_html.escape(dim_label.capitalize())}</th>'
-    f'<th class="n">{m["label"]}</th><th class="n">Registros</th></tr></thead>'
-    f'<tbody>{_filas}</tbody></table>',
-    unsafe_allow_html=True,
-)
+# --- Tabla completa (plegable, para no alargar) ---
+with st.expander(f"Ver tabla completa · {n_dim} {_plural(dim_label)}"):
+    _tfilas = "".join(
+        f'<tr><td>{_html.escape(str(r["DIMENSION"]))}</td>'
+        f'<td class="n">{fmt(r["VALOR"], m["fmt"])}</td>'
+        f'<td class="n">{fmt(r["BASE"], "num")}</td></tr>'
+        for _, r in dfg.iterrows()
+    )
+    st.markdown(
+        f'<table class="dt"><thead><tr><th>{_html.escape(dim_label.capitalize())}</th>'
+        f'<th class="n">{m["label"]}</th><th class="n">Registros</th></tr></thead>'
+        f'<tbody>{_tfilas}</tbody></table>',
+        unsafe_allow_html=True,
+    )
 
 st.markdown(PIE, unsafe_allow_html=True)

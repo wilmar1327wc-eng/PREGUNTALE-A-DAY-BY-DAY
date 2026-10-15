@@ -18,7 +18,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.lib.enums import TA_RIGHT
 from reportlab.platypus import (BaseDocTemplate, PageTemplate, Frame, Paragraph,
                                 Spacer, Table, TableStyle, Image)
-from reportlab.graphics.shapes import Drawing, Rect
+from reportlab.graphics.shapes import Drawing, Rect, PolyLine, Polygon
 
 # ---- paleta (clara, para informe) ----
 NAVY = colors.HexColor("#0E2A52")
@@ -63,11 +63,42 @@ def _barra(frac, w=7.0 * cm, h=0.42 * cm):
     return d
 
 
+def _sparkline(vals, w, h=1.6 * cm):
+    """Mini línea de tendencia (área + línea) para el PDF. None si no hay 2+ puntos."""
+    vals = [float(v) for v in vals if v == v]
+    if len(vals) < 2:
+        return None
+    vmin, vmax = min(vals), max(vals)
+    rng = (vmax - vmin) or 1.0
+    n = len(vals)
+    pad = 0.14 * cm
+
+    def X(i):
+        return w * (i / (n - 1))
+
+    def Y(v):
+        return pad + (h - 2 * pad) * ((v - vmin) / rng)
+
+    pts = []
+    for i, v in enumerate(vals):
+        pts += [X(i), Y(v)]
+    d = Drawing(w, h)
+    d.add(Polygon(points=[0, 0] + pts + [w, 0], fillColor=colors.HexColor("#E4F5F2"), strokeColor=None))
+    d.add(PolyLine(points=pts, strokeColor=TEAL, strokeWidth=1.7))
+    d.add(Rect(X(n - 1) - 0.07 * cm, Y(vals[-1]) - 0.07 * cm, 0.14 * cm, 0.14 * cm,
+               fillColor=TEAL_D, strokeColor=None))
+    return d
+
+
 def construir_pdf(*, indicador, cliente, periodo, metrica_label, valor_txt, base_txt,
-                  filas, insights, jt_datauri=None, cli_datauri=None, fecha_txt=""):
+                  filas, insights, jt_datauri=None, cli_datauri=None, fecha_txt="",
+                  var_txt=None, var_signo="flat", serie=()):
     """
     filas: lista de (dimension:str, valor_txt:str, frac:float, base_txt:str)
     insights: lista de str
+    var_txt: variación vs período anterior, ya formateada (ej. "+12,4%") o None
+    var_signo: "good" | "bad" | "flat" (para el color, ya decidido por la métrica)
+    serie: lista de valores numéricos para el mini gráfico de tendencia
     """
     buf = io.BytesIO()
     jt_bytes = _raw(jt_datauri)
@@ -139,10 +170,15 @@ def construir_pdf(*, indicador, cliente, periodo, metrica_label, valor_txt, base
         story += left
     story.append(Spacer(1, 0.45 * cm))
 
-    # --- Panel KPI ---
-    kpi_inner = Table([[Paragraph(valor_txt, kpibig)],
-                       [Paragraph(f"{metrica_label} de {cliente} · {periodo}", kpictx)],
-                       [Paragraph(f"sobre {base_txt} registros", kpictx)]], colWidths=[W - ML - MR - 1.0 * cm])
+    # --- Panel KPI (con variación vs período anterior) ---
+    _vcolor = {"good": TEAL_D, "bad": colors.HexColor("#C0453A"), "flat": MUTED}.get(var_signo, MUTED)
+    kpivar = ParagraphStyle("kpivar", fontName="Helvetica-Bold", fontSize=10, textColor=_vcolor, leading=13, spaceBefore=3)
+    kpi_rows = [[Paragraph(valor_txt, kpibig)],
+                [Paragraph(f"{metrica_label} de {cliente} · {periodo}", kpictx)],
+                [Paragraph(f"sobre {base_txt} registros", kpictx)]]
+    if var_txt:
+        kpi_rows.append([Paragraph(f"{var_txt} vs. período anterior", kpivar)])
+    kpi_inner = Table(kpi_rows, colWidths=[W - ML - MR - 1.0 * cm])
     kpi_inner.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                                    ("TOPPADDING", (0, 0), (-1, -1), 1), ("BOTTOMPADDING", (0, 0), (-1, -1), 1)]))
     kpi = Table([[kpi_inner]], colWidths=[W - ML - MR])
@@ -155,6 +191,13 @@ def construir_pdf(*, indicador, cliente, periodo, metrica_label, valor_txt, base
                              ("ROUNDEDCORNERS", [6, 6, 6, 6])]))
     story.append(kpi)
     story.append(Spacer(1, 0.5 * cm))
+
+    # --- Tendencia (mini gráfico) ---
+    spark = _sparkline(serie, W - ML - MR) if serie else None
+    if spark is not None:
+        story.append(Paragraph("Tendencia del período", sec))
+        story.append(spark)
+        story.append(Spacer(1, 0.5 * cm))
 
     # --- Desglose (barras) ---
     dimname = filas and "desglose" or "desglose"
