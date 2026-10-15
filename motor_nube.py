@@ -107,6 +107,15 @@ DOMINIOS = {
         "dimensiones": ["zona", "departamento", "municipio", "canal", "cadena", "categoria",
                         "subcategoria", "marca", "producto", "pdv"],
     },
+    "encuestas": {
+        "nombre": "Encuestas", "tabla": "cubo_encuestas",
+        "metrica_default": "num_encuestas", "dimension_default": "regional",
+        "metricas": {
+            "num_encuestas": {"label": "# encuestas", "fmt": "num", "tipo": "count"},
+        },
+        "dimensiones": ["regional", "departamento", "municipio", "canal", "cadena",
+                        "categoria_pdv", "zona", "cargo", "titulo", "estado", "pdv"],
+    },
 }
 
 VENTANAS = ["hoy", "semana", "mes", "30d", "3m", "6m", "anio"]
@@ -159,6 +168,7 @@ def _match_cliente(texto, marcas):
 def _heuristica(pregunta, marcas):
     q = (pregunta or "").lower()
     dom = "agotados"
+    hit = True   # ¿la pregunta menciona algún indicador de DBD?
     if any(w in q for w in ["cobertur", "visit", "sin visitar", "ingres"]):
         dom = "cobertura"
     elif any(w in q for w in ["precio", "competencia", "oferta"]):
@@ -169,6 +179,10 @@ def _heuristica(pregunta, marcas):
         dom = "ventas"
     elif any(w in q for w in ["agotad", "quiebre", "faltante", "disponible", "stock"]):
         dom = "agotados"
+    elif any(w in q for w in ["encuest", "survey", "sondeo"]):
+        dom = "encuestas"
+    else:
+        hit = False
 
     cname, cids = _match_cliente(q, marcas)
 
@@ -199,19 +213,26 @@ def _heuristica(pregunta, marcas):
     elif "30" in q:
         ven = "30d"
 
+    # En tema si menciona un indicador de DBD o uno de los clientes gestionados.
     return {"dominio": dom, "cliente_ids": cids, "cliente_nombre": cname,
-            "metrica": None, "dimension": dim, "ventana": ven}
+            "metrica": None, "dimension": dim, "ventana": ven,
+            "en_tema": bool(hit or cname)}
 
 
 def _prompt(pregunta, marcas):
     cat = {d: {"metricas": list(DOMINIOS[d]["metricas"].keys()),
                "dimensiones": DOMINIOS[d]["dimensiones"]} for d in DOMINIOS}
     return (
-        "Eres un intérprete que traduce una pregunta de negocio a JSON. Responde SOLO JSON.\n"
+        "Eres un intérprete que SOLO traduce preguntas sobre la operación comercial de "
+        "'Day by Day' (cobertura, agotados, precios, ventas y actividades de merchandising "
+        "de los clientes listados) a un JSON de consulta. No respondes nada más: ni cultura "
+        "general, ni opiniones, ni código, ni otras empresas o temas ajenos. Responde SOLO JSON.\n"
         f"Dominios con métricas y dimensiones válidas: {json.dumps(cat, ensure_ascii=False)}\n"
         f"Clientes disponibles (nombre EXACTO): {list(marcas.keys())}\n"
         f"Ventanas válidas: {VENTANAS}\n"
-        "Devuelve: dominio (uno válido), cliente (nombre exacto o null), "
+        "Devuelve: en_dominio (true SOLO si la pregunta trata de esos indicadores/clientes; "
+        "false si es ajena, p.ej. saludos, chistes, cultura general, código, otra empresa), "
+        "dominio (uno válido), cliente (nombre exacto o null), "
         "metrica (clave válida del dominio o null), dimension (clave válida o null), "
         'ventana (de la lista; si no se menciona "6m").\n\n'
         f'Pregunta: "{pregunta}"'
@@ -224,7 +245,8 @@ def _parse(data, marcas):
     cids = marcas.get(cname) if cname in marcas else None
     return {"dominio": dom, "cliente_ids": cids, "cliente_nombre": cname if cids else None,
             "metrica": data.get("metrica"), "dimension": data.get("dimension"),
-            "ventana": data.get("ventana") if data.get("ventana") in VENTANAS else "6m"}
+            "ventana": data.get("ventana") if data.get("ventana") in VENTANAS else "6m",
+            "en_tema": bool(data.get("en_dominio", True))}
 
 
 def _groq(pregunta, marcas, key):
