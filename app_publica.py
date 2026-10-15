@@ -40,8 +40,10 @@ except Exception:
 import reporte
 try:
     import reporte_excel
-except Exception:
+    _xlsx_err = None
+except Exception as _e:
     reporte_excel = None
+    _xlsx_err = str(_e)
 try:
     from fondo_app import FONDO
 except Exception:
