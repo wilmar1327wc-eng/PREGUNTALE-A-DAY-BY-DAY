@@ -63,6 +63,7 @@ PRESET_METRICAS = {
     "Agotados": ("agotados", "pct_agotado"),
     "Precios": ("precios", "precio_promedio"),
     "Actividades": ("actividades", "num_actividades"),
+    "Encuestas": ("encuestas", "num_encuestas"),
 }
 
 PIE = ('<div class="pie">Centro de Inteligencia de Negocios de job&amp;talent · '
