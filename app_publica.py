@@ -39,6 +39,10 @@ except Exception:
     JOBTALENT = ""
 import reporte
 try:
+    import reporte_excel
+except Exception:
+    reporte_excel = None
+try:
     from fondo_app import FONDO
 except Exception:
     FONDO = ""
@@ -278,6 +282,16 @@ def _pdf_bytes(firma, indicador, cliente, periodo, metrica_label, valor_txt, bas
         valor_txt=valor_txt, base_txt=base_txt, filas=list(filas), insights=list(insights),
         jt_datauri=JOBTALENT, cli_datauri=LOGOS.get((cliente or "").strip().upper()), fecha_txt=fecha,
         var_txt=var_txt, var_signo=var_signo, serie=list(serie))
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _xlsx_bytes(firma, indicador, cliente, periodo, metrica_label, fmt_m, tipo, valor, base,
+                var, var_cls, filas, dim_label, serie, insights, fecha):
+    return reporte_excel.construir_xlsx(
+        indicador=indicador, cliente=cliente, periodo=periodo, metrica_label=metrica_label,
+        fmt=fmt_m, tipo=tipo, valor=valor, base=base, var=var, var_cls=var_cls,
+        filas=list(filas), dim_label=dim_label, serie=list(serie),
+        insights=list(insights), fecha_txt=fecha)
 
 try:
     marcas = cargar_clientes()
@@ -618,27 +632,43 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- Informe PDF (un botón) ---
+# --- Exportables: PDF + Excel (mismo informe, dos formatos) ---
 _maxv = float(dfg["VALOR"].max()) or 1.0
 _filas = tuple((str(r["DIMENSION"]), fmt(r["VALOR"], m["fmt"]),
                 float(r["VALOR"]) / _maxv, fmt(r["BASE"], "num"))
                for _, r in dfg.head(14).iterrows())
+_filas_raw = tuple((str(r["DIMENSION"]), float(r["VALOR"]), int(r["BASE"])) for _, r in dfg.iterrows())
 _ins = tuple(_insights(m, dfg, valor, base, cname, vlabel, dim_label))
-_serie_vals = ()
+_serie_vals, _serie_raw = (), ()
 if serie is not None and not serie.empty:
     _serie_vals = tuple(float(x) for x in serie["VALOR"].tolist() if x == x)
+    _serie_raw = tuple((r["FECHA"], float(r["VALOR"])) for _, r in serie.iterrows() if r["VALOR"] == r["VALOR"])
 _var_pdf = (f"{var * 100:+.1f}%".replace(".", ",")) if var is not None else None
+_hoy = fmt_fecha(date.today())
+
+_cpdf, _cxls, _ = st.columns([0.3, 0.3, 0.4])
 try:
     _pdf = _pdf_bytes((dom, tuple(ids), ventana, metrica, dimension, cname),
                       meta["nombre"], cname, vlabel, m["label"],
-                      fmt(valor, m["fmt"]), fmt(base, "num"), _filas, _ins, fmt_fecha(date.today()),
+                      fmt(valor, m["fmt"]), fmt(base, "num"), _filas, _ins, _hoy,
                       _var_pdf, _vcls, _serie_vals)
-    _dc, _ = st.columns([0.46, 0.54])
-    _dc.download_button("⬇  Descargar informe ejecutivo (PDF)", data=_pdf,
-                        file_name=f"Informe {meta['nombre']} - {cname}.pdf",
-                        mime="application/pdf", type="primary")
+    _cpdf.download_button("⬇  Informe PDF", data=_pdf,
+                          file_name=f"Informe {meta['nombre']} - {cname}.pdf",
+                          mime="application/pdf", type="primary")
 except Exception:
-    st.caption("No pude generar el PDF en este momento.")
+    _cpdf.caption("PDF no disponible.")
+if reporte_excel is not None:
+    try:
+        _xls = _xlsx_bytes((dom, tuple(ids), ventana, metrica, dimension, cname),
+                           meta["nombre"], cname, vlabel, m["label"], m["fmt"], m["tipo"],
+                           float(valor), int(base), var, _vcls, _filas_raw, dim_label, _serie_raw,
+                           _ins, _hoy)
+        _cxls.download_button("⬇  Datos en Excel", data=_xls,
+                              file_name=f"Informe {meta['nombre']} - {cname}.xlsx",
+                              mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                              type="primary")
+    except Exception:
+        _cxls.caption("Excel no disponible.")
 
 # --- Tendencia en el tiempo ---
 _svg, _pico, _f0, _f1 = _svg_tendencia(serie, m["fmt"]) if serie is not None else ("", "", "", "")
