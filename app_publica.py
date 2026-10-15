@@ -287,13 +287,15 @@ def _pdf_bytes(firma, indicador, cliente, periodo, metrica_label, valor_txt, bas
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
-def _xlsx_bytes(firma, indicador, cliente, periodo, metrica_label, fmt_m, tipo, valor, base,
-                var, var_cls, filas, dim_label, serie, insights, fecha):
+def _xlsx_bytes(firma, _indicador, _cliente, _periodo, _metrica_label, _fmt_m, _tipo, _valor, _base,
+                _var, _var_cls, _filas, _dim_label, _serie, _insights, _fecha):
+    # Solo 'firma' entra al hash del caché; los demás parámetros llevan '_' para que
+    # Streamlit NO los hashee (evita fallos al hashear tipos como pandas.Timestamp).
     return reporte_excel.construir_xlsx(
-        indicador=indicador, cliente=cliente, periodo=periodo, metrica_label=metrica_label,
-        fmt=fmt_m, tipo=tipo, valor=valor, base=base, var=var, var_cls=var_cls,
-        filas=list(filas), dim_label=dim_label, serie=list(serie),
-        insights=list(insights), fecha_txt=fecha)
+        indicador=_indicador, cliente=_cliente, periodo=_periodo, metrica_label=_metrica_label,
+        fmt=_fmt_m, tipo=_tipo, valor=_valor, base=_base, var=_var, var_cls=_var_cls,
+        filas=list(_filas), dim_label=_dim_label, serie=list(_serie),
+        insights=list(_insights), fecha_txt=_fecha)
 
 try:
     marcas = cargar_clientes()
@@ -669,8 +671,10 @@ if reporte_excel is not None:
                               file_name=f"Informe {meta['nombre']} - {cname}.xlsx",
                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                               type="primary")
-    except Exception:
-        _cxls.caption("Excel no disponible.")
+    except Exception as _e:
+        _cxls.caption(f"Excel: {type(_e).__name__}: {str(_e)[:140]}")
+else:
+    _cxls.caption(f"Excel no disponible — {_xlsx_err or 'falta reporte_excel.py en el repo'}")
 
 # --- Tendencia en el tiempo ---
 _svg, _pico, _f0, _f1 = _svg_tendencia(serie, m["fmt"]) if serie is not None else ("", "", "", "")

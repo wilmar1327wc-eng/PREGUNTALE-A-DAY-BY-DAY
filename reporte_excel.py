@@ -13,6 +13,7 @@ Pestañas:
 """
 
 import io
+import datetime as _dt
 
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -170,14 +171,27 @@ def construir_xlsx(*, indicador, cliente, periodo, metrica_label, fmt, tipo,
         for j in range(1, 4):
             wd.cell(tr, j).border = Border(top=Side(style="thin", color=NAVY))
 
-        # barras de datos en la columna de valor + filtro + congelar encabezado
-        rule = DataBarRule(start_type="min", end_type="max", color=TEAL, showValue=True)
-        wd.conditional_formatting.add(f"B{first}:B{last}", rule)
+        # barras de datos (si la versión de openpyxl las soporta) + filtro + congelar
+        try:
+            rule = DataBarRule(start_type="min", end_type="max", color=TEAL, showValue=True)
+            wd.conditional_formatting.add(f"B{first}:B{last}", rule)
+        except Exception:
+            pass
         wd.auto_filter.ref = f"A{hrow}:C{last}"
         wd.freeze_panes = f"A{first}"
 
     # ============ Pestaña 3: Tendencia ============
-    serie = [(f, float(v)) for f, v in (serie or []) if v == v]
+    def _cd(x):
+        # Deja una fecha limpia (sin hora ni zona horaria); openpyxl no acepta tz.
+        try:
+            if hasattr(x, "to_pydatetime"):   # pandas.Timestamp
+                x = x.to_pydatetime()
+            if isinstance(x, _dt.datetime):
+                return x.date()
+        except Exception:
+            pass
+        return x
+    serie = [(_cd(f), float(v)) for f, v in (serie or []) if v == v]
     if len(serie) >= 2:
         wt = wb.create_sheet("Tendencia")
         wt.sheet_view.showGridLines = False
@@ -199,21 +213,24 @@ def construir_xlsx(*, indicador, cliente, periodo, metrica_label, fmt, tipo,
             cv.font = Font(name=FONT, size=10, color=INK)
         flast = f0 + len(serie) - 1
 
-        ch = LineChart()
-        ch.title = f"{metrica_label} · {cliente}"
-        ch.style = 2
-        ch.height = 7.5
-        ch.width = 18
-        data = Reference(wt, min_col=2, min_row=6, max_row=flast)
-        cats = Reference(wt, min_col=1, min_row=f0, max_row=flast)
-        ch.add_data(data, titles_from_data=True)
-        ch.set_categories(cats)
-        ch.legend = None
-        s0 = ch.series[0]
-        s0.smooth = True
-        s0.graphicalProperties.line.solidFill = TEAL
-        s0.graphicalProperties.line.width = 28000  # EMU (~2.2pt)
-        wt.add_chart(ch, f"A{flast + 3}")
+        try:
+            ch = LineChart()
+            ch.title = f"{metrica_label} · {cliente}"
+            ch.style = 2
+            ch.height = 7.5
+            ch.width = 18
+            data = Reference(wt, min_col=2, min_row=6, max_row=flast)
+            cats = Reference(wt, min_col=1, min_row=f0, max_row=flast)
+            ch.add_data(data, titles_from_data=True)
+            ch.set_categories(cats)
+            ch.legend = None
+            s0 = ch.series[0]
+            s0.smooth = True
+            s0.graphicalProperties.line.solidFill = TEAL
+            s0.graphicalProperties.line.width = 28000  # EMU (~2.2pt)
+            wt.add_chart(ch, f"A{flast + 3}")
+        except Exception:
+            pass   # si el gráfico falla en alguna versión, igual queda la tabla de datos
 
     bio = io.BytesIO()
     wb.save(bio)
