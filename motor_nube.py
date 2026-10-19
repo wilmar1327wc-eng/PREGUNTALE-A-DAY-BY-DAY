@@ -576,6 +576,48 @@ def por_cliente(dom, marcas, ids, ventana, metrica=None):
     return g.rename(columns={"base": "BASE"})[["CLIENTE", "VALOR", "BASE"]]
 
 
+# ===================================================================
+# CONSULTA POR PDV (lee la tabla liviana cubo_pdv)
+# ===================================================================
+def pdv_meses(ids):
+    """Meses disponibles en cubo_pdv (para el selector de mes), más nuevos primero."""
+    binds = {}
+    idsph = _ids_ph(ids, binds)
+    df = run_df(f"SELECT DISTINCT mes FROM cubo_pdv WHERE cliente_id IN ({idsph}) ORDER BY mes DESC", binds)
+    return list(df["mes"]) if not df.empty else []
+
+
+def pdv_lista(ids, mes=None):
+    """Lista de puntos (pdv_id, nombre) para el selector, ordenada por nombre."""
+    binds = {}
+    idsph = _ids_ph(ids, binds)
+    cond = f"cliente_id IN ({idsph})"
+    if mes is not None:
+        binds["mes"] = mes
+        cond += " AND mes = %(mes)s"
+    df = run_df(f"SELECT pdv_id, MAX(pdv) AS pdv FROM cubo_pdv WHERE {cond} GROUP BY pdv_id ORDER BY 2", binds)
+    return [(int(r["pdv_id"]), str(r["pdv"])) for _, r in df.iterrows()] if not df.empty else []
+
+
+def pdv_estado(ids, pdv_id, mes):
+    """Capturas por indicador de un PDV en un mes: dict {indicador: capturas}."""
+    binds = {"pid": int(pdv_id), "mes": mes}
+    idsph = _ids_ph(ids, binds)
+    df = run_df(
+        f"SELECT indicador, SUM(capturas) AS n FROM cubo_pdv "
+        f"WHERE cliente_id IN ({idsph}) AND pdv_id = %(pid)s AND mes = %(mes)s GROUP BY indicador",
+        binds,
+    )
+    return {str(r["indicador"]): int(r["n"]) for _, r in df.iterrows()} if not df.empty else {}
+
+
+# Nombres bonitos de los indicadores del PDV
+PDV_IND_LABEL = {
+    "agotados": "Agotados", "precios": "Precios", "actividades": "Actividades",
+    "ventas": "Ventas", "ingresos": "Ingresos",
+}
+
+
 # Métricas rápidas para los chips/preselector (sin IA): etiqueta -> (dominio, metrica)
 PRESET_METRICAS = {
     "Ventas": ("ventas", "venta_total"),
