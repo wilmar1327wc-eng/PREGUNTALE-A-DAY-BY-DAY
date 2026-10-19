@@ -496,8 +496,9 @@ def do_pdv(mapa):
     st.session_state.consulta = {"via": "pdv", "marca": st.session_state.get("p_marca"),
                                  "pdv_id": pid, "pdv_nombre": nm, "mes": st.session_state.get("p_mes")}
 
-@st.cache_data(ttl=1800, show_spinner=False)
 def c_pdv_meses(marca):
+    # Sin caché a propósito: si construyes cubo_pdv después de abrir el app, se recupera
+    # solo (el caché se quedaba pegado mostrando "no existe").
     try:
         return list(motor.pdv_meses(marcas.get(marca, [])))
     except Exception:
@@ -564,7 +565,17 @@ with tab_pdv:
         _meses = c_pdv_meses(p_marca)
         if not _meses:
             pc2.selectbox("Mes", ["(sin datos)"], key="p_mes_vacio", disabled=True)
-            st.caption("Aún no está la tabla por PDV en el cubo. Corre el refresco (crea cubo_pdv) y recarga.")
+            _emsg = ""
+            try:
+                _n = int(motor.run_df("SELECT COUNT(*) AS n FROM cubo_pdv")["n"].iloc[0])
+            except Exception as _e:
+                _n, _emsg = -1, str(_e)
+            if _n < 0:
+                st.caption(f"No pude leer cubo_pdv: {_emsg[:110]}. ¿Subiste el motor_nube nuevo y corriste el refresco?")
+            elif _n == 0:
+                st.caption("La tabla cubo_pdv está vacía. Corre refrescar_pdv.bat con la VPN y recarga.")
+            else:
+                st.caption(f"Hay {_n:,} filas en cubo_pdv, pero no para esta marca. Prueba con otra marca.")
         else:
             p_mes = pc2.selectbox("Mes", _meses, key="p_mes", format_func=_mes_label)
             _pdvs = c_pdv_lista(p_marca, p_mes)
