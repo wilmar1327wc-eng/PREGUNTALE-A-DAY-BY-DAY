@@ -599,13 +599,15 @@ def pdv_lista(ids, mes=None):
     return [(int(r["pdv_id"]), str(r["pdv"])) for _, r in df.iterrows()] if not df.empty else []
 
 
-def pdv_estado(ids, pdv_id, mes):
-    """Capturas por indicador de un PDV en un mes: dict {indicador: capturas}."""
-    binds = {"pid": int(pdv_id), "mes": mes}
+def pdv_estado(ids, pdv_id, ventana):
+    """Capturas por indicador de un PDV, sumadas sobre los meses del período (ventana)."""
+    ini = _FECHA.get(ventana, _FECHA["3m"])   # inicio del período (expr Postgres)
+    binds = {"pid": int(pdv_id)}
     idsph = _ids_ph(ids, binds)
     df = run_df(
         f"SELECT indicador, SUM(capturas) AS n FROM cubo_pdv "
-        f"WHERE cliente_id IN ({idsph}) AND pdv_id = %(pid)s AND mes = %(mes)s GROUP BY indicador",
+        f"WHERE cliente_id IN ({idsph}) AND pdv_id = %(pid)s "
+        f"AND mes >= date_trunc('month', {ini}) GROUP BY indicador",
         binds,
     )
     return {str(r["indicador"]): int(r["n"]) for _, r in df.iterrows()} if not df.empty else {}

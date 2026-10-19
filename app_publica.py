@@ -479,6 +479,7 @@ def do_menu():
         "ind": st.session_state.get("m_ind"),
         "per": st.session_state.get("m_per"),
         "dim": st.session_state.get("m_dim"),
+        "pdv": st.session_state.get("m_pdv"),
     }
 
 def do_ia():
@@ -488,105 +489,90 @@ def do_ia():
     intp, usado = motor.interpretar(q, marcas)
     st.session_state.consulta = {"via": "ia", "intp": intp, "usado": usado}
 
-def do_pdv(mapa):
-    sel = st.session_state.get("p_pdv")
-    if not sel or sel not in mapa:
-        return
-    pid, nm = mapa[sel]
-    st.session_state.consulta = {"via": "pdv", "marca": st.session_state.get("p_marca"),
-                                 "pdv_id": pid, "pdv_nombre": nm, "mes": st.session_state.get("p_mes")}
-
-def c_pdv_meses(marca):
-    # Sin caché a propósito: si construyes cubo_pdv después de abrir el app, se recupera
-    # solo (el caché se quedaba pegado mostrando "no existe").
+def c_pdv_lista(marca):
+    # Puntos de la marca para el selector. Sin caché: si construyes cubo_pdv después de
+    # abrir el app, se recupera solo (no se queda pegado en "vacío").
     try:
-        return list(motor.pdv_meses(marcas.get(marca, [])))
+        return motor.pdv_lista(marcas.get(marca, []))
     except Exception:
         return []
 
-@st.cache_data(ttl=1800, show_spinner=False)
-def c_pdv_lista(marca, mes):
-    try:
-        return motor.pdv_lista(marcas.get(marca, []), mes)
-    except Exception:
-        return []
 
-def _mes_label(d):
+def _render_pdv_card(ids, pid, nm, marca, ventana, logo):
+    """Tarjeta de un punto: qué indicadores capturó en el período (✅/❌)."""
+    vlabel = motor.VENTANA_LABEL.get(ventana, ventana)
     try:
-        return f"{MESES_LARGO[d.month - 1].capitalize()} {d.year}"
-    except Exception:
-        return str(d)
+        est = motor.pdv_estado(ids, pid, ventana)
+    except Exception as e:
+        st.error(f"No pude consultar el punto: {e}")
+        st.stop()
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+    if logo:
+        st.markdown(f'<span class="membrete"><img src="{logo}"></span>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="pdvhead"><div class="pt">📍 {_html.escape(str(nm))}</div>'
+        f'<div class="ps">{_html.escape(str(marca))} &nbsp;·&nbsp; {vlabel} &nbsp;·&nbsp; ID {pid}</div></div>',
+        unsafe_allow_html=True,
+    )
+    sub = {"agotados": "capturas", "precios": "capturas", "actividades": "capturas",
+           "ventas": "ventas", "ingresos": "programaciones"}
+    labels = getattr(motor, "PDV_IND_LABEL", {"agotados": "Agotados", "precios": "Precios",
+                     "actividades": "Actividades", "ventas": "Ventas", "ingresos": "Ingresos"})
+    tiles = ""
+    for ind, lbl in labels.items():
+        n = int(est.get(ind, 0))
+        ok = n > 0
+        val = ("✅ " + f"{n:,}".replace(",", ".")) if ok else "❌"
+        tiles += (f'<div class="tile {"" if ok else "off"}"><div class="tl">{lbl}</div>'
+                  f'<div class="tv2">{val}</div><div class="tsub">{sub.get(ind, "")}</div></div>')
+    st.markdown(f'<div class="kpis pdvkpis">{tiles}</div>', unsafe_allow_html=True)
+    hechos = sum(1 for ind in labels if int(est.get(ind, 0)) > 0)
+    st.markdown(
+        f'<div class="lectura">En <b>{vlabel}</b>, <b>{_html.escape(str(nm))}</b> registra actividad en '
+        f'<b>{hechos}</b> de {len(labels)} indicadores. Los que salen en ❌ aún no tienen captura en el período.</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(PIE, unsafe_allow_html=True)
+    st.stop()
 
 op_marca = list(marcas.keys()) + ["Todas las marcas"]
 ind_labels = list(PRESET_METRICAS.keys())
 
-tab_ind, tab_pdv = st.tabs(["🔎  Por indicador", "📍  Por punto de venta"])
+with st.container(border=True):
+    st.markdown(
+        '<div class="eye"><span class="d"></span><b>Consulta rápida</b>'
+        '<span>— respuesta al instante, sin gastar IA</span></div>',
+        unsafe_allow_html=True,
+    )
+    c1, c2, c3, c4, c5 = st.columns([1.25, 1, 1, 1, 1.4], vertical_alignment="bottom")
+    marca_sel = c1.selectbox("Marca / cliente", op_marca, key="m_marca")
+    ind_sel = c2.selectbox("Indicador", ind_labels, key="m_ind")
+    per_sel = c3.selectbox(
+        "Período", motor.VENTANAS, index=motor.VENTANAS.index("3m"), key="m_per",
+        format_func=lambda k: motor.VENTANA_LABEL.get(k, k).capitalize(),
+    )
+    _dom_sel = PRESET_METRICAS[ind_sel][0]
+    _dims = motor.DOMINIOS[_dom_sel]["dimensiones"]
+    _defdim = motor.DOMINIOS[_dom_sel]["dimension_default"]
+    dim_sel = c4.selectbox(
+        "Ver por", _dims, index=_dims.index(_defdim) if _defdim in _dims else 0, key="m_dim",
+        format_func=lambda s: s.replace("_", " ").capitalize(),
+    )
+    # Punto de venta (opcional) — depende de la marca elegida
+    _pdvs = c_pdv_lista(marca_sel) if (marca_sel and marca_sel != "Todas las marcas") else []
+    _pdv_opts = ["(Todos los puntos)"] + [f"{nm}  ·  ID {pid}" for pid, nm in _pdvs]
+    pdv_sel = c5.selectbox("Punto de venta", _pdv_opts, key="m_pdv")
 
-with tab_ind:
-    with st.container(border=True):
-        st.markdown(
-            '<div class="eye"><span class="d"></span><b>Consulta rápida</b>'
-            '<span>— respuesta al instante, sin gastar IA</span></div>',
-            unsafe_allow_html=True,
-        )
-        c1, c2, c3, c4, c5 = st.columns([1.15, 1, 1, 1, 0.72], vertical_alignment="bottom")
-        marca_sel = c1.selectbox("Marca / cliente", op_marca, key="m_marca")
-        ind_sel = c2.selectbox("Indicador", ind_labels, key="m_ind")
-        per_sel = c3.selectbox(
-            "Período", motor.VENTANAS, index=motor.VENTANAS.index("3m"), key="m_per",
-            format_func=lambda k: motor.VENTANA_LABEL.get(k, k).capitalize(),
-        )
-        _dom_sel = PRESET_METRICAS[ind_sel][0]
-        _dims = motor.DOMINIOS[_dom_sel]["dimensiones"]
-        _defdim = motor.DOMINIOS[_dom_sel]["dimension_default"]
-        dim_sel = c4.selectbox(
-            "Ver por", _dims, index=_dims.index(_defdim) if _defdim in _dims else 0, key="m_dim",
-            format_func=lambda s: s.replace("_", " ").capitalize(),
-        )
-        c5.button("Consultar", type="primary", on_click=do_menu)
+    bcol, _bsp = st.columns([0.32, 0.68])
+    bcol.button("Consultar", type="primary", on_click=do_menu)
 
-        st.markdown('<div class="askq">¿Algo más puntual? Pregúntame con tus palabras.</div>', unsafe_allow_html=True)
-        f1, f2 = st.columns([1, 0.24], vertical_alignment="bottom")
-        f1.text_input(
-            "Pregunta libre", key="m_free", label_visibility="collapsed",
-            placeholder="Ej: ¿cómo va el % de agotados de Derco por cadena este trimestre?",
-        )
-        f2.button("Preguntar con IA", type="secondary", on_click=do_ia)
-
-with tab_pdv:
-    with st.container(border=True):
-        st.markdown(
-            '<div class="eye"><span class="d"></span><b>Consulta por punto de venta</b>'
-            '<span>— ¿qué ha capturado un punto este mes?</span></div>',
-            unsafe_allow_html=True,
-        )
-        pc1, pc2 = st.columns([1, 1])
-        p_marca = pc1.selectbox("Marca / cliente", list(marcas.keys()), key="p_marca")
-        _meses = c_pdv_meses(p_marca)
-        if not _meses:
-            pc2.selectbox("Mes", ["(sin datos)"], key="p_mes_vacio", disabled=True)
-            _emsg = ""
-            try:
-                _n = int(motor.run_df("SELECT COUNT(*) AS n FROM cubo_pdv")["n"].iloc[0])
-            except Exception as _e:
-                _n, _emsg = -1, str(_e)
-            if _n < 0:
-                st.caption(f"No pude leer cubo_pdv: {_emsg[:110]}. ¿Subiste el motor_nube nuevo y corriste el refresco?")
-            elif _n == 0:
-                st.caption("La tabla cubo_pdv está vacía. Corre refrescar_pdv.bat con la VPN y recarga.")
-            else:
-                st.caption(f"Hay {_n:,} filas en cubo_pdv, pero no para esta marca. Prueba con otra marca.")
-        else:
-            p_mes = pc2.selectbox("Mes", _meses, key="p_mes", format_func=_mes_label)
-            _pdvs = c_pdv_lista(p_marca, p_mes)
-            _opts = [f"{nm}  ·  ID {pid}" for pid, nm in _pdvs]
-            _map = {o: (_pdvs[i][0], _pdvs[i][1]) for i, o in enumerate(_opts)}
-            pp1, pp2 = st.columns([1, 0.32], vertical_alignment="bottom")
-            if _opts:
-                pp1.selectbox("Punto de venta (escribe el nombre o el ID)", _opts, key="p_pdv")
-                pp2.button("Ver punto", type="primary", on_click=do_pdv, args=(_map,))
-            else:
-                pp1.caption("No hay puntos con actividad en ese mes.")
+    st.markdown('<div class="askq">¿Algo más puntual? Pregúntame con tus palabras.</div>', unsafe_allow_html=True)
+    f1, f2 = st.columns([1, 0.24], vertical_alignment="bottom")
+    f1.text_input(
+        "Pregunta libre", key="m_free", label_visibility="collapsed",
+        placeholder="Ej: ¿cómo va el % de agotados de Derco por cadena este trimestre?",
+    )
+    f2.button("Preguntar con IA", type="secondary", on_click=do_ia)
 
 
 # ===================================================================
@@ -600,47 +586,6 @@ if not cons:
     st.markdown(
         '<div class="empty">Elige <b>marca</b>, <b>indicador</b> y <b>período</b>, y pulsa '
         '<b>Consultar</b>. O escríbeme una pregunta y dale <b>Preguntar con IA</b>.</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(PIE, unsafe_allow_html=True)
-    st.stop()
-
-# ---- Consulta por PDV: tarjeta del punto (indicadores capturados en el mes) ----
-if cons.get("via") == "pdv":
-    _marca = cons.get("marca"); _pid = cons.get("pdv_id")
-    _nm = cons.get("pdv_nombre"); _mes = cons.get("mes")
-    _ids = marcas.get(_marca, [])
-    _logo = LOGOS.get((_marca or "").strip().upper())
-    try:
-        _est = motor.pdv_estado(_ids, _pid, _mes)
-    except Exception as e:
-        st.error(f"No pude consultar el punto: {e}")
-        st.stop()
-    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-    if _logo:
-        st.markdown(f'<span class="membrete"><img src="{_logo}"></span>', unsafe_allow_html=True)
-    st.markdown(
-        f'<div class="pdvhead"><div class="pt">📍 {_html.escape(str(_nm))}</div>'
-        f'<div class="ps">{_html.escape(str(_marca))} &nbsp;·&nbsp; {_mes_label(_mes)} &nbsp;·&nbsp; ID {_pid}</div></div>',
-        unsafe_allow_html=True,
-    )
-    _PDV_SUB = {"agotados": "capturas", "precios": "capturas", "actividades": "capturas",
-                "ventas": "ventas", "ingresos": "programaciones"}
-    _labels = getattr(motor, "PDV_IND_LABEL", {"agotados": "Agotados", "precios": "Precios",
-                      "actividades": "Actividades", "ventas": "Ventas", "ingresos": "Ingresos"})
-    _tiles = ""
-    for _ind, _lbl in _labels.items():
-        _n = int(_est.get(_ind, 0))
-        _ok = _n > 0
-        _val = ("✅ " + f"{_n:,}".replace(",", ".")) if _ok else "❌"
-        _tiles += (f'<div class="tile {"" if _ok else "off"}"><div class="tl">{_lbl}</div>'
-                   f'<div class="tv2">{_val}</div><div class="tsub">{_PDV_SUB.get(_ind, "")}</div></div>')
-    st.markdown(f'<div class="kpis pdvkpis">{_tiles}</div>', unsafe_allow_html=True)
-    _hechos = sum(1 for _ind in _labels if int(_est.get(_ind, 0)) > 0)
-    st.markdown(
-        f'<div class="lectura">En <b>{_mes_label(_mes)}</b>, <b>{_html.escape(str(_nm))}</b> registra '
-        f'actividad en <b>{_hechos}</b> de {len(_labels)} indicadores. '
-        f'Los que salen en ❌ aún no tienen captura este mes.</div>',
         unsafe_allow_html=True,
     )
     st.markdown(PIE, unsafe_allow_html=True)
@@ -682,6 +627,16 @@ else:
     if not ids:
         st.warning("No encontré esa marca en el cubo.")
         st.stop()
+    # Opción A: si se eligió un punto de venta específico, mostrar SU tarjeta
+    _pdvsel = cons.get("pdv")
+    if _pdvsel and _pdvsel != "(Todos los puntos)":
+        try:
+            _nm2, _pid2 = _pdvsel.rsplit("  ·  ID ", 1)
+            _pid2 = int(_pid2)
+        except Exception:
+            _nm2, _pid2 = str(_pdvsel), None
+        if _pid2 is not None:
+            _render_pdv_card(ids, _pid2, _nm2, cname, ventana, logo)   # hace st.stop()
 
 meta = motor.DOMINIOS[dom]
 vlabel = motor.VENTANA_LABEL.get(ventana, ventana)
