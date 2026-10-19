@@ -116,6 +116,19 @@ DOMINIOS = {
         "dimensiones": ["regional", "departamento", "municipio", "canal", "cadena",
                         "categoria_pdv", "zona", "cargo", "titulo", "estado", "pdv"],
     },
+    "ingresos": {
+        "nombre": "Ingresos", "tabla": "cubo_ingresos",
+        "metrica_default": "pct_asistencia", "dimension_default": "regional",
+        "metricas": {
+            # base = total programado · ingresaron = VISITADO · pendientes = PROGRAMADO
+            "pct_asistencia": {"label": "% asistencia", "fmt": "pct", "tipo": "ratio", "num": "ingresaron"},
+            "num_ingresaron": {"label": "# ingresaron", "fmt": "num", "tipo": "sum", "col": "ingresaron"},
+            "num_pendientes": {"label": "# pendientes", "fmt": "num", "tipo": "sum", "col": "pendientes"},
+            "programados": {"label": "# programados", "fmt": "num", "tipo": "count"},
+        },
+        "dimensiones": ["regional", "municipio", "canal", "cadena", "categoria_pdv",
+                        "zona", "cargo", "pdv"],
+    },
 }
 
 VENTANAS = ["hoy", "semana", "mes", "30d", "3m", "6m", "anio"]
@@ -181,6 +194,8 @@ def _heuristica(pregunta, marcas):
         dom = "agotados"
     elif any(w in q for w in ["encuest", "survey", "sondeo"]):
         dom = "encuestas"
+    elif any(w in q for w in ["ingres", "asistenc", "checkin", "check-in", "fichaj", "ya entraron"]):
+        dom = "ingresos"
     else:
         hit = False
 

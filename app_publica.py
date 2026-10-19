@@ -70,6 +70,7 @@ PRESET_METRICAS = {
     "Precios": ("precios", "precio_promedio"),
     "Actividades": ("actividades", "num_actividades"),
     "Encuestas": ("encuestas", "num_encuestas"),
+    "Ingresos": ("ingresos", "pct_asistencia"),
 }
 
 PIE = ('<div class="pie">Centro de Inteligencia de Negocios de job&amp;talent · '
@@ -521,7 +522,7 @@ if cons["via"] == "ia":
     if not intp.get("en_tema", True):
         st.markdown(
             '<div class="empty">Solo respondo sobre la operación de <b>Day by Day</b>: '
-            'cobertura, agotados, precios, ventas y actividades de tus marcas. '
+            'cobertura, agotados, precios, ventas, actividades, encuestas e ingresos de tus marcas. '
             'Prueba algo como <b>“cobertura de Henkel por cadena este trimestre”</b>.</div>',
             unsafe_allow_html=True,
         )
