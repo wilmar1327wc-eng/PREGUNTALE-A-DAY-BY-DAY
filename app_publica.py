@@ -958,8 +958,11 @@ st.markdown(f'<div class="btitle">{m["label"]} por {dim_label} ({cname})</div>{_
 # --- 🏅 Top de funcionarios por el indicador real (si el indicador tiene data por persona) ---
 try:
     _ftop = motor.func_top(ids, dom, ventana, metrica)
-except Exception:
+except Exception as _fe:
     _ftop = []
+    # Si falla (p.ej. el cubo aún no tiene las columnas num/den), que NO quede mudo:
+    st.caption(f"⚠️ Top funcionarios no disponible — reconstruye el cubo de funcionarios "
+               f"con el refresco más reciente. Detalle: {_fe}")
 if _ftop:
     _fmax = max((float(v) for _, v, _ in _ftop), default=0) or 1
     _frows = ""
