@@ -486,6 +486,7 @@ def do_menu():
         "per": st.session_state.get("m_per"),
         "dim": st.session_state.get("m_dim"),
         "pdv": st.session_state.get("m_pdv"),
+        "func": st.session_state.get("m_func"),
     }
 
 def do_ia():
@@ -542,37 +543,10 @@ def _render_pdv_card(ids, pid, nm, marca, ventana, logo):
     st.stop()
 
 # ===================================================================
-# MODO SUPERVISOR (con clave) — ver por persona + roster de ingresos.
-# Esta parte SÍ muestra nombres, por eso exige PIN (st.secrets["SUPERVISOR_PIN"]).
-# La parte pública de arriba sigue siendo anónima y agregada.
+# FILTRO POR FUNCIONARIO (normal, sin clave) — ficha de una persona.
+# Lee la tabla cubo_funcionarios. Muestra el nombre (dato personal): hoy va en la
+# parte pública; el login para ocultarlo queda para más adelante.
 # ===================================================================
-def _sup_pin():
-    try:
-        return str(st.secrets.get("SUPERVISOR_PIN", "") or "")
-    except Exception:
-        return ""
-
-def do_sup_login():
-    pin = str(st.session_state.get("sup_pin_in") or "").strip()
-    real = _sup_pin()
-    if real and pin == real:
-        st.session_state.sup_ok = True
-        st.session_state.sup_err = False
-    else:
-        st.session_state.sup_err = True
-
-def do_sup_logout():
-    st.session_state.sup_ok = False
-
-def do_sup():
-    st.session_state.consulta = {
-        "via": "func",
-        "marca": st.session_state.get("s_marca"),
-        "func": st.session_state.get("s_func"),
-        "per": st.session_state.get("s_per"),
-        "modo": st.session_state.get("s_modo"),
-    }
-
 def c_func_lista(marca):
     try:
         return motor.func_lista(marcas.get(marca, []))
@@ -580,7 +554,7 @@ def c_func_lista(marca):
         return []
 
 def _render_func_card(ids, fid, nm, marca, ventana, logo):
-    """Tarjeta de una persona: qué capturó/ingresó en el período (modo supervisor)."""
+    """Ficha de una persona: qué capturó/ingresó en el período (filtro por funcionario)."""
     vlabel = motor.VENTANA_LABEL.get(ventana, ventana)
     try:
         est = motor.func_estado(ids, fid, ventana)
@@ -619,8 +593,8 @@ def _render_func_card(ids, fid, nm, marca, ventana, logo):
         unsafe_allow_html=True,
     )
     st.markdown(
-        '<div class="pie">Vista interna de supervisión · contiene datos personales. '
-        'No compartas el enlace ni capturas de esta vista.</div>', unsafe_allow_html=True)
+        '<div class="pie">Centro de Inteligencia de Negocios de job&amp;talent · '
+        'ficha por funcionario; números agregados al último refresco.</div>', unsafe_allow_html=True)
     st.stop()
 
 def _render_func_roster(ids, marca, ventana, logo):
@@ -679,7 +653,8 @@ with st.container(border=True):
         '<span>— respuesta al instante, sin gastar IA</span></div>',
         unsafe_allow_html=True,
     )
-    c1, c2, c3, c4, c5 = st.columns([1.25, 1, 1, 1, 1.4], vertical_alignment="bottom")
+    # Fila 1: define QUÉ ver (marca, indicador, período, ver por)
+    c1, c2, c3, c4 = st.columns([1.3, 1, 1, 1], vertical_alignment="bottom")
     marca_sel = c1.selectbox("Marca / cliente", op_marca, key="m_marca")
     ind_sel = c2.selectbox("Indicador", ind_labels, key="m_ind")
     per_sel = c3.selectbox(
@@ -693,10 +668,15 @@ with st.container(border=True):
         "Ver por", _dims, index=_dims.index(_defdim) if _defdim in _dims else 0, key="m_dim",
         format_func=lambda s: DIM_LABEL.get(s, s.replace("_", " ")).capitalize(),
     )
-    # Punto de venta (opcional) — depende de la marca elegida
-    _pdvs = c_pdv_lista(marca_sel) if (marca_sel and marca_sel != "Todas las marcas") else []
+    # Fila 2: acercar a UN punto o a UNA persona (opcional, depende de la marca)
+    _tiene_marca = bool(marca_sel) and marca_sel != "Todas las marcas"
+    d1, d2 = st.columns([1, 1], vertical_alignment="bottom")
+    _pdvs = c_pdv_lista(marca_sel) if _tiene_marca else []
     _pdv_opts = ["(Todos los puntos)"] + [f"{nm}  ·  ID {pid}" for pid, nm in _pdvs]
-    pdv_sel = c5.selectbox("Punto de venta", _pdv_opts, key="m_pdv")
+    pdv_sel = d1.selectbox("Punto de venta", _pdv_opts, key="m_pdv")
+    _funcs = c_func_lista(marca_sel) if _tiene_marca else []
+    _func_opts = ["(Todos los funcionarios)"] + [f"{nm}  ·  ID {fid}" for fid, nm in _funcs]
+    func_sel = d2.selectbox("Funcionario", _func_opts, key="m_func")
 
     bcol, _bsp = st.columns([0.32, 0.68])
     bcol.button("Consultar", type="primary", on_click=do_menu)
@@ -708,41 +688,6 @@ with st.container(border=True):
         placeholder="Ej: ¿cómo va el % de agotados de Derco por cadena este trimestre?",
     )
     f2.button("Preguntar con IA", type="secondary", on_click=do_ia)
-
-
-# ---------- Modo supervisor (con clave): ver por persona ----------
-if "sup_ok" not in st.session_state:
-    st.session_state.sup_ok = False
-
-with st.expander("🔒 Modo supervisor — ver por persona (requiere clave)"):
-    if not _sup_pin():
-        st.caption('Aún no has configurado la clave. Agrega  SUPERVISOR_PIN = "tu_clave"  '
-                   'en los Secrets de la app (Manage app → Settings → Secrets).')
-    elif not st.session_state.sup_ok:
-        st.markdown("Esta vista muestra **nombres** de funcionarios. Escribe la clave para entrar.")
-        pc1, pc2 = st.columns([1, 0.3], vertical_alignment="bottom")
-        pc1.text_input("Clave de supervisor", type="password", key="sup_pin_in",
-                       label_visibility="collapsed", placeholder="Clave de supervisor")
-        pc2.button("Entrar", on_click=do_sup_login)
-        if st.session_state.get("sup_err"):
-            st.error("Clave incorrecta.")
-    else:
-        sc1, sc2, sc3, sc4 = st.columns([1.1, 1, 1.6, 0.9], vertical_alignment="bottom")
-        s_marca = sc1.selectbox("Marca / cliente", list(marcas.keys()), key="s_marca")
-        s_modo = sc2.selectbox("Qué ver", ["Una persona", "Lista de ingresos"], key="s_modo")
-        if s_modo == "Una persona":
-            _fns = c_func_lista(s_marca)
-            _fopts = ["(elige persona)"] + [f"{nm}  ·  ID {fid}" for fid, nm in _fns]
-            sc3.selectbox("Persona", _fopts, key="s_func")
-        else:
-            sc3.markdown("<div style='color:#9DB4DA;font-size:.9rem;padding:8px 2px'>"
-                         "Quién ya ingresó y quién falta en el período.</div>", unsafe_allow_html=True)
-            st.session_state["s_func"] = "(elige persona)"
-        sc4.selectbox("Período", motor.VENTANAS, index=motor.VENTANAS.index("mes"), key="s_per",
-                      format_func=lambda k: motor.VENTANA_LABEL.get(k, k).capitalize())
-        bb1, bb2, _bb = st.columns([0.3, 0.3, 0.4])
-        bb1.button("Ver", type="primary", on_click=do_sup)
-        bb2.button("Salir", on_click=do_sup_logout)
 
 
 # ===================================================================
@@ -760,34 +705,6 @@ if not cons:
     )
     st.markdown(PIE, unsafe_allow_html=True)
     st.stop()
-
-# --- Modo supervisor: tarjeta por persona o roster de ingresos (detrás de PIN) ---
-if cons.get("via") == "func":
-    if not st.session_state.get("sup_ok"):
-        st.warning("Entra con la clave de supervisor para ver esta vista.")
-        st.stop()
-    _marca = cons.get("marca") or (list(marcas.keys())[0] if marcas else None)
-    _ids = marcas.get(_marca, [])
-    _logo = LOGOS.get((_marca or "").strip().upper())
-    _ventana = cons.get("per") or "mes"
-    if not _ids:
-        st.warning("No encontré esa marca en el cubo.")
-        st.stop()
-    if cons.get("modo") == "Lista de ingresos":
-        _render_func_roster(_ids, _marca, _ventana, _logo)   # hace st.stop()
-    _fsel = cons.get("func")
-    if not _fsel or _fsel == "(elige persona)":
-        st.info("Elige una persona en el modo supervisor y pulsa Ver.")
-        st.stop()
-    try:
-        _fnm, _fpid = _fsel.rsplit("  ·  ID ", 1)
-        _fpid = int(_fpid)
-    except Exception:
-        _fnm, _fpid = str(_fsel), None
-    if _fpid is None:
-        st.info("No pude leer el ID de la persona.")
-        st.stop()
-    _render_func_card(_ids, _fpid, _fnm, _marca, _ventana, _logo)   # hace st.stop()
 
 if cons["via"] == "ia":
     intp = cons["intp"]
@@ -825,7 +742,18 @@ else:
     if not ids:
         st.warning("No encontré esa marca en el cubo.")
         st.stop()
-    # Opción A: si se eligió un punto de venta específico, mostrar SU tarjeta
+    # Si se eligió un FUNCIONARIO específico -> su ficha (tiene prioridad sobre el PDV)
+    _funcsel = cons.get("func")
+    if _funcsel and _funcsel != "(Todos los funcionarios)":
+        try:
+            _fnm, _fpid = _funcsel.rsplit("  ·  ID ", 1)
+            _fpid = int(_fpid)
+        except Exception:
+            _fnm, _fpid = str(_funcsel), None
+        if _fpid is not None:
+            _render_func_card(ids, _fpid, _fnm, cname, ventana, logo)   # hace st.stop()
+
+    # Si se eligió un punto de venta específico -> SU tarjeta
     _pdvsel = cons.get("pdv")
     if _pdvsel and _pdvsel != "(Todos los puntos)":
         try:
