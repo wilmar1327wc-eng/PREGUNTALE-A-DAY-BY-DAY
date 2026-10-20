@@ -592,6 +592,27 @@ def _render_func_card(ids, fid, nm, marca, ventana, logo):
         f'<b>{hechos}</b> de {len(labels)} indicadores. En ❌ aún no hay captura en el período.</div>',
         unsafe_allow_html=True,
     )
+    # Detalle: QUÉ encuestas capturó la persona (por nombre), si hay
+    try:
+        enc_det = motor.func_encuestas(ids, fid, ventana)
+    except Exception:
+        enc_det = []
+    if enc_det:
+        def _fmtn(x):
+            return f"{int(x):,}".replace(",", ".")
+        items = "".join(
+            f'<li><span class="en">{_html.escape(str(t))}</span>'
+            f'<span class="ec">{_fmtn(c)}</span></li>' for t, c in enc_det)
+        st.markdown(
+            "<style>.encd{margin-top:12px;border:1px solid #22406E;border-radius:12px;"
+            "background:#0F2146;padding:10px 14px}.encd h4{margin:0 0 6px;"
+            "font-family:'Space Grotesk';font-size:1rem;color:#35ECD9}"
+            ".encd ul{list-style:none;margin:0;padding:0}.encd li{display:flex;"
+            "justify-content:space-between;gap:12px;padding:4px 0;border-top:1px solid #16305A;"
+            "color:#ECF3FF;font-size:.95rem}.encd li:first-child{border-top:none}"
+            ".encd .ec{color:#9DB4DA;font-variant-numeric:tabular-nums}</style>"
+            f'<div class="encd"><h4>Encuestas capturadas · {len(enc_det)}</h4><ul>{items}</ul></div>',
+            unsafe_allow_html=True)
     st.markdown(
         '<div class="pie">Centro de Inteligencia de Negocios de job&amp;talent · '
         'ficha por funcionario; números agregados al último refresco.</div>', unsafe_allow_html=True)

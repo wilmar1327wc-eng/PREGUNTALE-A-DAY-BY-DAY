@@ -679,6 +679,18 @@ def func_roster(ids, ventana):
     return df
 
 
+def func_encuestas(ids, func_id, ventana):
+    """Qué encuestas (por nombre) capturó una persona en el período, con su conteo."""
+    ini = _FECHA.get(ventana, _FECHA["3m"])
+    binds = {"fid": int(func_id)}
+    idsph = _ids_ph(ids, binds)
+    df = run_df(
+        f"SELECT titulo, SUM(capturas) AS n FROM cubo_func_encuestas "
+        f"WHERE cliente_id IN ({idsph}) AND funcionario_id = %(fid)s "
+        f"AND mes >= date_trunc('month', {ini}) GROUP BY titulo ORDER BY 2 DESC", binds)
+    return [(str(r["titulo"]), int(r["n"])) for _, r in df.iterrows()] if not df.empty else []
+
+
 # Métricas rápidas para los chips/preselector (sin IA): etiqueta -> (dominio, metrica)
 PRESET_METRICAS = {
     "Ventas": ("ventas", "venta_total"),
