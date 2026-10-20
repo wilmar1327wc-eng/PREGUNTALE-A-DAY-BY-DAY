@@ -326,6 +326,85 @@ def _xlsx_bytes(firma, _indicador, _cliente, _periodo, _metrica_label, _fmt_m, _
         filas=list(_filas), dim_label=_dim_label, serie=list(_serie),
         insights=list(_insights), fecha_txt=_fecha)
 
+# ===================================================================
+# LOGIN (portada) — toda la app queda detrás de usuario + clave
+# ===================================================================
+def _usuarios():
+    """Usuarios válidos: sección [usuarios] en Secrets (usuario = "clave"),
+    o un solo APP_USER / APP_PASSWORD. El usuario no distingue mayúsculas."""
+    out = {}
+    try:
+        us = st.secrets.get("usuarios", None)
+        if us:
+            for k, v in dict(us).items():
+                out[str(k).strip().lower()] = str(v)
+    except Exception:
+        pass
+    if not out:
+        try:
+            u, p = st.secrets.get("APP_USER"), st.secrets.get("APP_PASSWORD")
+            if u and p:
+                out[str(u).strip().lower()] = str(p)
+        except Exception:
+            pass
+    return out
+
+def _check_login():
+    u = (st.session_state.get("login_user") or "").strip().lower()
+    p = str(st.session_state.get("login_pass") or "")
+    us = _usuarios()
+    if u and u in us and us[u] == p:
+        st.session_state.auth_ok = True
+        st.session_state.auth_user = u
+        st.session_state.login_err = False
+    else:
+        st.session_state.auth_ok = False
+        st.session_state.login_err = True
+
+def _logout():
+    st.session_state.auth_ok = False
+
+def _render_portada():
+    _logo_html = (f'<img src="{JOBTALENT}" style="height:44px;margin-bottom:16px" alt="job&amp;talent">'
+                  if JOBTALENT else "")
+    st.markdown(
+        "<style>"
+        ".portada{max-width:470px;margin:7vh auto 0;text-align:center}"
+        ".portada .t{font-family:'Space Grotesk',sans-serif;font-weight:700;color:#fff;"
+        "font-size:2.4rem;line-height:1.06;letter-spacing:-.02em}"
+        ".portada .t .ia{display:inline-block;background:" + TEAL + ";color:#04233b;font-size:.32em;"
+        "font-weight:700;padding:.2em .55em;border-radius:.55em;vertical-align:middle;margin-left:.35em;"
+        "transform:translateY(-.18em)}"
+        ".portada .s{color:" + MUTED + ";font-size:1rem;margin:14px 0 2px}"
+        ".portada .lock{color:" + TEAL + ";font-size:.9rem;margin-top:12px;font-weight:600}"
+        ".loginfoot{max-width:470px;margin:16px auto 0;text-align:center;color:" + MUTED + ";font-size:.82rem}"
+        "</style>"
+        f'<div class="portada">{_logo_html}'
+        '<div class="t">Pregúntale a Day by Day<span class="ia">+ IA</span></div>'
+        '<div class="s">Centro de Inteligencia de Negocios · job&amp;talent</div>'
+        '<div class="lock">🔒 Acceso restringido · ingresa con tu usuario y clave</div></div>',
+        unsafe_allow_html=True)
+    _, cmid, _ = st.columns([1, 1.25, 1])
+    with cmid:
+        with st.container(border=True):
+            if not _usuarios():
+                st.caption("⚠️ Aún no hay usuarios configurados. Agrega la sección [usuarios] "
+                           "al final de los Secrets de la app.")
+            st.text_input("Usuario", key="login_user", placeholder="usuario")
+            st.text_input("Clave", key="login_pass", type="password", placeholder="clave",
+                          on_change=_check_login)
+            st.button("Entrar", type="primary", on_click=_check_login, use_container_width=True)
+            if st.session_state.get("login_err"):
+                st.error("Usuario o clave incorrectos.")
+    st.markdown('<div class="loginfoot">¿Sin acceso? Escríbele al Centro de Inteligencia de Negocios.</div>',
+                unsafe_allow_html=True)
+
+if "auth_ok" not in st.session_state:
+    st.session_state.auth_ok = False
+if not st.session_state.auth_ok:
+    _render_portada()
+    st.stop()
+
 try:
     marcas = cargar_clientes()
 except Exception as e:
@@ -441,6 +520,10 @@ def _svg_tendencia(serie, f):
 # ===================================================================
 # Barra superior
 # ===================================================================
+_spu, _lgu = st.columns([9, 1.1], vertical_alignment="center")
+with _lgu:
+    st.button(f"Salir", on_click=_logout, key="logout_btn", use_container_width=True,
+              help=f"Cerrar sesión ({st.session_state.get('auth_user', '')})")
 _logo = f'<img class="jt" src="{JOBTALENT}" alt="job&amp;talent">' if JOBTALENT else '<b style="color:#fff">Day by Day</b>'
 st.markdown(
     f'<div class="top"><div class="l">{_logo}'
