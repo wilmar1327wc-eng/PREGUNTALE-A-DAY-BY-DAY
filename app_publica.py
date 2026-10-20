@@ -673,10 +673,12 @@ with st.container(border=True):
     d1, d2 = st.columns([1, 1], vertical_alignment="bottom")
     _pdvs = c_pdv_lista(marca_sel) if _tiene_marca else []
     _pdv_opts = ["(Todos los puntos)"] + [f"{nm}  ·  ID {pid}" for pid, nm in _pdvs]
-    pdv_sel = d1.selectbox("Punto de venta", _pdv_opts, key="m_pdv")
+    pdv_sel = d1.selectbox("Punto de venta", _pdv_opts, key="m_pdv",
+                           help="Haz clic y escribe para buscar por nombre o ID.")
     _funcs = c_func_lista(marca_sel) if _tiene_marca else []
     _func_opts = ["(Todos los funcionarios)"] + [f"{nm}  ·  ID {fid}" for fid, nm in _funcs]
-    func_sel = d2.selectbox("Funcionario", _func_opts, key="m_func")
+    func_sel = d2.selectbox("Funcionario", _func_opts, key="m_func",
+                            help="Haz clic y escribe para buscar por nombre o ID.")
 
     bcol, _bsp = st.columns([0.32, 0.68])
     bcol.button("Consultar", type="primary", on_click=do_menu)
