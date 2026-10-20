@@ -197,8 +197,9 @@ st.markdown(f"""
   .kpi .base {{ color:{MUTED}; font-size:.9rem; margin-top:9px; }}
 
   .btitle {{ color:{INK}; font-weight:600; font-size:1rem; margin:22px 0 12px; }}
-  .bar {{ display:grid; grid-template-columns:120px 1fr 92px; align-items:center; gap:12px; margin:9px 0; }}
-  .blab {{ color:{INK}; font-size:.9rem; text-align:right; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }}
+  .bar {{ display:grid; grid-template-columns:180px minmax(0,1fr) 92px; align-items:center; gap:12px; margin:9px 0; }}
+  .blab {{ color:{INK}; font-size:.86rem; line-height:1.18; text-align:right; overflow:hidden;
+           display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }}
   .btrack {{ background:rgba(255,255,255,.06); border-radius:7px; height:22px; overflow:hidden; }}
   .bfill {{ display:block; height:100%; border-radius:7px; background:linear-gradient(90deg,#00B6AA,{TEAL}); }}
   .bval {{ color:{INK}; font-size:.9rem; font-variant-numeric:tabular-nums; }}
@@ -948,7 +949,8 @@ maxv = float(top["VALOR"].max()) or 1.0
 _bars = ""
 for _, r in top.iterrows():
     w = max(3.0, float(r["VALOR"]) / maxv * 100.0)
-    _bars += (f'<div class="bar"><span class="blab">{_html.escape(str(r["DIMENSION"]))}</span>'
+    _nm = _html.escape(str(r["DIMENSION"]))
+    _bars += (f'<div class="bar"><span class="blab" title="{_nm}">{_nm}</span>'
               f'<span class="btrack"><span class="bfill" style="width:{w:.1f}%"></span></span>'
               f'<span class="bval">{fmt(r["VALOR"], m["fmt"])}</span></div>')
 st.markdown(f'<div class="btitle">{m["label"]} por {dim_label} ({cname})</div>{_bars}', unsafe_allow_html=True)
