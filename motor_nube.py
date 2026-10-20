@@ -691,6 +691,40 @@ def func_encuestas(ids, func_id, ventana):
     return [(str(r["titulo"]), int(r["n"])) for _, r in df.iterrows()] if not df.empty else []
 
 
+def func_top(ids, dom, ventana, metrica, n=12, min_base=10):
+    """Top de funcionarios por el indicador REAL (recompone la métrica desde num/den).
+    Devuelve [(nombre, valor, base)], ordenado de mayor a menor. [] si no hay data."""
+    ini = _FECHA.get(ventana, _FECHA["3m"])
+    binds = {"dom": dom}
+    idsph = _ids_ph(ids, binds)
+    df = run_df(
+        f"SELECT funcionario_id, MAX(funcionario) AS funcionario, "
+        f"SUM(num) AS num, SUM(den) AS den FROM cubo_funcionarios "
+        f"WHERE cliente_id IN ({idsph}) AND indicador = %(dom)s "
+        f"AND mes >= date_trunc('month', {ini}) GROUP BY funcionario_id", binds)
+    if df.empty:
+        return []
+    met = (DOMINIOS.get(dom, {}).get("metricas", {}) or {}).get(metrica, {})
+    tipo = met.get("tipo", "sum")
+    rows = []
+    for _, r in df.iterrows():
+        num = float(r["num"] or 0)
+        den = float(r["den"] or 0)
+        if tipo == "ratio":
+            if den < min_base:          # evita % con muestra minúscula
+                continue
+            val = num / den if den else 0
+        elif tipo == "avg":
+            if den < 1:
+                continue
+            val = num / den
+        else:                           # sum / count
+            val = num
+        rows.append((str(r["funcionario"]), val, den))
+    rows.sort(key=lambda x: x[1], reverse=True)
+    return rows[:n]
+
+
 # Métricas rápidas para los chips/preselector (sin IA): etiqueta -> (dominio, metrica)
 PRESET_METRICAS = {
     "Ventas": ("ventas", "venta_total"),

@@ -955,6 +955,23 @@ for _, r in top.iterrows():
               f'<span class="bval">{fmt(r["VALOR"], m["fmt"])}</span></div>')
 st.markdown(f'<div class="btitle">{m["label"]} por {dim_label} ({cname})</div>{_bars}', unsafe_allow_html=True)
 
+# --- 🏅 Top de funcionarios por el indicador real (si el indicador tiene data por persona) ---
+try:
+    _ftop = motor.func_top(ids, dom, ventana, metrica)
+except Exception:
+    _ftop = []
+if _ftop:
+    _fmax = max((float(v) for _, v, _ in _ftop), default=0) or 1
+    _frows = ""
+    for _fn, _fv, _fb in _ftop:
+        _fw = max(3.0, (float(_fv) / _fmax) * 100.0)
+        _fnm = _html.escape(str(_fn))
+        _frows += (f'<div class="bar"><span class="blab" title="{_fnm}">{_fnm}</span>'
+                   f'<span class="btrack"><span class="bfill" style="width:{_fw:.1f}%"></span></span>'
+                   f'<span class="bval">{fmt(_fv, m["fmt"])}</span></div>')
+    st.markdown(f'<div class="btitle">🏅 Top funcionarios · {m["label"]} ({cname})</div>{_frows}',
+                unsafe_allow_html=True)
+
 # --- Hallazgos (ahora visibles en la app, no solo en el PDF) ---
 _fi = "".join(f'<div class="fi">{_html.escape(t)}</div>' for t in _ins)
 st.markdown(f'<div class="find"><h4>Hallazgos</h4>{_fi}</div>', unsafe_allow_html=True)
