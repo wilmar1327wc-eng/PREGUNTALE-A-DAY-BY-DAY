@@ -109,12 +109,13 @@ DOMINIOS = {
     },
     "encuestas": {
         "nombre": "Encuestas", "tabla": "cubo_encuestas",
-        "metrica_default": "num_encuestas", "dimension_default": "regional",
+        # Por defecto se ve POR ENCUESTA (titulo): "qué encuestas tiene la marca y cuántas lleva".
+        "metrica_default": "num_encuestas", "dimension_default": "titulo",
         "metricas": {
             "num_encuestas": {"label": "# encuestas", "fmt": "num", "tipo": "count"},
         },
-        "dimensiones": ["regional", "departamento", "municipio", "canal", "cadena",
-                        "categoria_pdv", "zona", "cargo", "titulo", "estado", "pdv"],
+        "dimensiones": ["titulo", "estado", "regional", "departamento", "municipio", "canal",
+                        "cadena", "categoria_pdv", "zona", "cargo", "pdv"],
     },
     "ingresos": {
         "nombre": "Ingresos", "tabla": "cubo_ingresos",
@@ -618,6 +619,64 @@ PDV_IND_LABEL = {
     "agotados": "Agotados", "precios": "Precios", "actividades": "Actividades",
     "ventas": "Ventas", "ingresos": "Ingresos",
 }
+
+
+# ===================================================================
+# CONSULTA POR FUNCIONARIO  (MODO SUPERVISOR — detrás de PIN en la app)
+# Lee la tabla liviana cubo_funcionarios. Esta tabla SÍ lleva nombre + id de la
+# persona (es su propósito: que un líder busque a alguien y vea su captura/ingreso).
+# Por eso en la app vive detrás de clave y nunca aparece en la parte pública.
+# ===================================================================
+FUN_IND_LABEL = {
+    "ingresos": "Ingresos", "agotados": "Agotados", "precios": "Precios",
+    "actividades": "Actividades", "encuestas": "Encuestas",
+}
+
+
+def func_lista(ids, q=None):
+    """Lista (funcionario_id, nombre) de la marca, para el selector del supervisor."""
+    binds = {}
+    idsph = _ids_ph(ids, binds)
+    cond = f"cliente_id IN ({idsph})"
+    if q:
+        binds["q"] = f"%{str(q).upper()}%"
+        cond += " AND UPPER(funcionario) LIKE %(q)s"
+    df = run_df(
+        f"SELECT funcionario_id, MAX(funcionario) AS funcionario FROM cubo_funcionarios "
+        f"WHERE {cond} GROUP BY funcionario_id ORDER BY 2", binds)
+    return [(int(r["funcionario_id"]), str(r["funcionario"])) for _, r in df.iterrows()] if not df.empty else []
+
+
+def func_estado(ids, func_id, ventana):
+    """Qué capturó/ingresó una persona en el período (ventana). Ingresos trae base (programados)."""
+    ini = _FECHA.get(ventana, _FECHA["3m"])
+    binds = {"fid": int(func_id)}
+    idsph = _ids_ph(ids, binds)
+    df = run_df(
+        f"SELECT indicador, SUM(capturas) AS n, SUM(base) AS base FROM cubo_funcionarios "
+        f"WHERE cliente_id IN ({idsph}) AND funcionario_id = %(fid)s "
+        f"AND mes >= date_trunc('month', {ini}) GROUP BY indicador", binds)
+    out = {}
+    for _, r in df.iterrows():
+        b = r["base"]
+        out[str(r["indicador"])] = {"n": int(r["n"] or 0),
+                                    "base": (int(b) if b is not None else None)}
+    return out
+
+
+def func_roster(ids, ventana):
+    """Roster de ingresos por persona en el período: cuántas veces ingresó (VISITADO)
+    vs cuántas estaban programadas. Sirve para 'quién ya ingresó' y 'quién falta'."""
+    ini = _FECHA.get(ventana, _FECHA["3m"])
+    binds = {}
+    idsph = _ids_ph(ids, binds)
+    df = run_df(
+        f"SELECT funcionario_id, MAX(funcionario) AS funcionario, "
+        f"SUM(capturas) AS ingreso, SUM(base) AS prog FROM cubo_funcionarios "
+        f"WHERE cliente_id IN ({idsph}) AND indicador = 'ingresos' "
+        f"AND mes >= date_trunc('month', {ini}) "
+        f"GROUP BY funcionario_id ORDER BY 2", binds)
+    return df
 
 
 # Métricas rápidas para los chips/preselector (sin IA): etiqueta -> (dominio, metrica)

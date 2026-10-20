@@ -83,6 +83,12 @@ PIE = ('<div class="pie">Centro de Inteligencia de Negocios de job&amp;talent ·
 _PEOR_SI_SUBE = {"pct_agotado", "num_agotados"}
 _SIN_JUICIO = {"precio_promedio"}
 
+# Etiquetas más claras para algunas dimensiones (el resto se arma solo con replace/capitalize).
+DIM_LABEL = {
+    "titulo": "encuesta", "pdv": "punto de venta",
+    "categoria_pdv": "categoría de PDV", "zona": "zona comercial",
+}
+
 st.set_page_config(page_title="Pregúntale a Day by Day", page_icon="◆", layout="wide")
 
 # Papel tapiz: la imagen de fondo + una capa oscura encima para que todo siga legible.
@@ -535,6 +541,135 @@ def _render_pdv_card(ids, pid, nm, marca, ventana, logo):
     st.markdown(PIE, unsafe_allow_html=True)
     st.stop()
 
+# ===================================================================
+# MODO SUPERVISOR (con clave) — ver por persona + roster de ingresos.
+# Esta parte SÍ muestra nombres, por eso exige PIN (st.secrets["SUPERVISOR_PIN"]).
+# La parte pública de arriba sigue siendo anónima y agregada.
+# ===================================================================
+def _sup_pin():
+    try:
+        return str(st.secrets.get("SUPERVISOR_PIN", "") or "")
+    except Exception:
+        return ""
+
+def do_sup_login():
+    pin = str(st.session_state.get("sup_pin_in") or "").strip()
+    real = _sup_pin()
+    if real and pin == real:
+        st.session_state.sup_ok = True
+        st.session_state.sup_err = False
+    else:
+        st.session_state.sup_err = True
+
+def do_sup_logout():
+    st.session_state.sup_ok = False
+
+def do_sup():
+    st.session_state.consulta = {
+        "via": "func",
+        "marca": st.session_state.get("s_marca"),
+        "func": st.session_state.get("s_func"),
+        "per": st.session_state.get("s_per"),
+        "modo": st.session_state.get("s_modo"),
+    }
+
+def c_func_lista(marca):
+    try:
+        return motor.func_lista(marcas.get(marca, []))
+    except Exception:
+        return []
+
+def _render_func_card(ids, fid, nm, marca, ventana, logo):
+    """Tarjeta de una persona: qué capturó/ingresó en el período (modo supervisor)."""
+    vlabel = motor.VENTANA_LABEL.get(ventana, ventana)
+    try:
+        est = motor.func_estado(ids, fid, ventana)
+    except Exception as e:
+        st.error(f"No pude consultar a la persona: {e}")
+        st.stop()
+    if logo:
+        st.markdown(f'<span class="membrete"><img src="{logo}"></span>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="pdvhead"><div class="pt">🧑‍💼 {_html.escape(str(nm))}</div>'
+        f'<div class="ps">{_html.escape(str(marca))} &nbsp;·&nbsp; {vlabel} &nbsp;·&nbsp; ID {fid}</div></div>',
+        unsafe_allow_html=True,
+    )
+    labels = getattr(motor, "FUN_IND_LABEL", {"ingresos": "Ingresos", "agotados": "Agotados",
+                     "precios": "Precios", "actividades": "Actividades", "encuestas": "Encuestas"})
+    tiles = ""
+    for ind, lbl in labels.items():
+        d = est.get(ind) or {}
+        n = int(d.get("n", 0))
+        base = d.get("base")
+        if ind == "ingresos" and base:
+            ok = n > 0
+            val = f"{n} de {base}"
+            sub = "ingresó / programados"
+        else:
+            ok = n > 0
+            val = ("✅ " + f"{n:,}".replace(",", ".")) if ok else "❌"
+            sub = "capturas"
+        tiles += (f'<div class="tile {"" if ok else "off"}"><div class="tl">{lbl}</div>'
+                  f'<div class="tv2">{val}</div><div class="tsub">{sub}</div></div>')
+    st.markdown(f'<div class="kpis pdvkpis">{tiles}</div>', unsafe_allow_html=True)
+    hechos = sum(1 for ind in labels if int((est.get(ind) or {}).get("n", 0)) > 0)
+    st.markdown(
+        f'<div class="lectura">En <b>{vlabel}</b>, <b>{_html.escape(str(nm))}</b> registra actividad en '
+        f'<b>{hechos}</b> de {len(labels)} indicadores. En ❌ aún no hay captura en el período.</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="pie">Vista interna de supervisión · contiene datos personales. '
+        'No compartas el enlace ni capturas de esta vista.</div>', unsafe_allow_html=True)
+    st.stop()
+
+def _render_func_roster(ids, marca, ventana, logo):
+    """Listado de ingresos: quién ya ingresó y quién falta, en el período."""
+    vlabel = motor.VENTANA_LABEL.get(ventana, ventana)
+    try:
+        df = motor.func_roster(ids, ventana)
+    except Exception as e:
+        st.error(f"No pude armar el listado: {e}")
+        st.stop()
+    st.markdown(
+        "<style>"
+        ".rcard{border:1px solid #22406E;border-radius:14px;padding:14px 16px;background:#0F2146;}"
+        ".rcard h4{margin:0 0 8px;font-family:'Space Grotesk';font-size:1.05rem;}"
+        ".rcard.ok h4{color:#35ECD9;} .rcard.no h4{color:#FF8DA1;}"
+        ".rlist{margin:0;padding-left:18px;max-height:360px;overflow:auto;}"
+        ".rlist li{color:#ECF3FF;font-size:.95rem;margin:2px 0;}"
+        ".rmiss{color:#9DB4DA;font-style:italic;} .rmore{color:#9DB4DA;font-size:.85rem;margin-top:6px;}"
+        "</style>", unsafe_allow_html=True)
+    if logo:
+        st.markdown(f'<span class="membrete"><img src="{logo}"></span>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="pdvhead"><div class="pt">📋 Ingresos — {_html.escape(str(marca))}</div>'
+        f'<div class="ps">{vlabel} &nbsp;·&nbsp; quién ya ingresó y quién falta</div></div>',
+        unsafe_allow_html=True,
+    )
+    if df is None or df.empty:
+        st.info("No hay programación de ingresos en el período para esta marca.")
+        st.stop()
+    df = df.copy()
+    df["ingreso"] = df["ingreso"].fillna(0).astype(int)
+    ya = df[df["ingreso"] > 0]
+    faltan = df[df["ingreso"] == 0]
+    def _names(d):
+        if d.empty:
+            return "<div class='rmiss'>— nadie —</div>"
+        rows = "".join(f"<li>{_html.escape(str(r['funcionario']))}</li>" for _, r in d.head(60).iterrows())
+        extra = f"<div class='rmore'>y {len(d) - 60} más…</div>" if len(d) > 60 else ""
+        return f"<ul class='rlist'>{rows}</ul>{extra}"
+    rc1, rc2 = st.columns(2)
+    rc1.markdown(f'<div class="rcard ok"><h4>✅ Ya ingresaron · {len(ya)}</h4>{_names(ya)}</div>', unsafe_allow_html=True)
+    rc2.markdown(f'<div class="rcard no"><h4>❌ Faltan por ingresar · {len(faltan)}</h4>{_names(faltan)}</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="pie">Vista interna de supervisión · contiene datos personales. '
+        'Es el acumulado del período (grano mensual); para el seguimiento del día usa el Panel de Control de Llamadas. '
+        'No compartas el enlace ni capturas de esta vista.</div>', unsafe_allow_html=True)
+    st.stop()
+
+
 op_marca = list(marcas.keys()) + ["Todas las marcas"]
 ind_labels = list(PRESET_METRICAS.keys())
 
@@ -556,7 +691,7 @@ with st.container(border=True):
     _defdim = motor.DOMINIOS[_dom_sel]["dimension_default"]
     dim_sel = c4.selectbox(
         "Ver por", _dims, index=_dims.index(_defdim) if _defdim in _dims else 0, key="m_dim",
-        format_func=lambda s: s.replace("_", " ").capitalize(),
+        format_func=lambda s: DIM_LABEL.get(s, s.replace("_", " ")).capitalize(),
     )
     # Punto de venta (opcional) — depende de la marca elegida
     _pdvs = c_pdv_lista(marca_sel) if (marca_sel and marca_sel != "Todas las marcas") else []
@@ -575,6 +710,41 @@ with st.container(border=True):
     f2.button("Preguntar con IA", type="secondary", on_click=do_ia)
 
 
+# ---------- Modo supervisor (con clave): ver por persona ----------
+if "sup_ok" not in st.session_state:
+    st.session_state.sup_ok = False
+
+with st.expander("🔒 Modo supervisor — ver por persona (requiere clave)"):
+    if not _sup_pin():
+        st.caption('Aún no has configurado la clave. Agrega  SUPERVISOR_PIN = "tu_clave"  '
+                   'en los Secrets de la app (Manage app → Settings → Secrets).')
+    elif not st.session_state.sup_ok:
+        st.markdown("Esta vista muestra **nombres** de funcionarios. Escribe la clave para entrar.")
+        pc1, pc2 = st.columns([1, 0.3], vertical_alignment="bottom")
+        pc1.text_input("Clave de supervisor", type="password", key="sup_pin_in",
+                       label_visibility="collapsed", placeholder="Clave de supervisor")
+        pc2.button("Entrar", on_click=do_sup_login)
+        if st.session_state.get("sup_err"):
+            st.error("Clave incorrecta.")
+    else:
+        sc1, sc2, sc3, sc4 = st.columns([1.1, 1, 1.6, 0.9], vertical_alignment="bottom")
+        s_marca = sc1.selectbox("Marca / cliente", list(marcas.keys()), key="s_marca")
+        s_modo = sc2.selectbox("Qué ver", ["Una persona", "Lista de ingresos"], key="s_modo")
+        if s_modo == "Una persona":
+            _fns = c_func_lista(s_marca)
+            _fopts = ["(elige persona)"] + [f"{nm}  ·  ID {fid}" for fid, nm in _fns]
+            sc3.selectbox("Persona", _fopts, key="s_func")
+        else:
+            sc3.markdown("<div style='color:#9DB4DA;font-size:.9rem;padding:8px 2px'>"
+                         "Quién ya ingresó y quién falta en el período.</div>", unsafe_allow_html=True)
+            st.session_state["s_func"] = "(elige persona)"
+        sc4.selectbox("Período", motor.VENTANAS, index=motor.VENTANAS.index("mes"), key="s_per",
+                      format_func=lambda k: motor.VENTANA_LABEL.get(k, k).capitalize())
+        bb1, bb2, _bb = st.columns([0.3, 0.3, 0.4])
+        bb1.button("Ver", type="primary", on_click=do_sup)
+        bb2.button("Salir", on_click=do_sup_logout)
+
+
 # ===================================================================
 # Resolver la consulta (menú o IA) -> intención
 # ===================================================================
@@ -590,6 +760,34 @@ if not cons:
     )
     st.markdown(PIE, unsafe_allow_html=True)
     st.stop()
+
+# --- Modo supervisor: tarjeta por persona o roster de ingresos (detrás de PIN) ---
+if cons.get("via") == "func":
+    if not st.session_state.get("sup_ok"):
+        st.warning("Entra con la clave de supervisor para ver esta vista.")
+        st.stop()
+    _marca = cons.get("marca") or (list(marcas.keys())[0] if marcas else None)
+    _ids = marcas.get(_marca, [])
+    _logo = LOGOS.get((_marca or "").strip().upper())
+    _ventana = cons.get("per") or "mes"
+    if not _ids:
+        st.warning("No encontré esa marca en el cubo.")
+        st.stop()
+    if cons.get("modo") == "Lista de ingresos":
+        _render_func_roster(_ids, _marca, _ventana, _logo)   # hace st.stop()
+    _fsel = cons.get("func")
+    if not _fsel or _fsel == "(elige persona)":
+        st.info("Elige una persona en el modo supervisor y pulsa Ver.")
+        st.stop()
+    try:
+        _fnm, _fpid = _fsel.rsplit("  ·  ID ", 1)
+        _fpid = int(_fpid)
+    except Exception:
+        _fnm, _fpid = str(_fsel), None
+    if _fpid is None:
+        st.info("No pude leer el ID de la persona.")
+        st.stop()
+    _render_func_card(_ids, _fpid, _fnm, _marca, _ventana, _logo)   # hace st.stop()
 
 if cons["via"] == "ia":
     intp = cons["intp"]
@@ -656,7 +854,7 @@ st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 if logo:
     st.markdown(f'<span class="membrete"><img src="{logo}"></span>', unsafe_allow_html=True)
 
-dim_label = dkey.replace("_", " ")
+dim_label = DIM_LABEL.get(dkey, dkey.replace("_", " "))
 _chips = "".join(f'<span class="pill">{t}</span>' for t in
                  [meta["nombre"], cname, m["label"], f"por {dim_label}", vlabel])
 st.markdown(f'<div class="entendi"><span class="lbl">Entendí</span>{_chips}</div>', unsafe_allow_html=True)
