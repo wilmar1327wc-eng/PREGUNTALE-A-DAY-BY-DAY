@@ -48,6 +48,10 @@ try:
     from fondo_app import FONDO
 except Exception:
     FONDO = ""
+try:
+    from portada_fondo import PORTADA_BG
+except Exception:
+    PORTADA_BG = ""
 
 # ---------- Paleta job&talent (teal #00D0C0 sacado del propio logo) ----------
 BG = "#0A1628"
@@ -385,16 +389,16 @@ def _render_portada():
     )
     _css = (
         "<style>"
-        ".pz{max-width:600px}"
+        ".pz{max-width:500px}"
         ".pz .logo{height:52px;margin-bottom:22px;border-radius:12px}"
         ".pz h1{font-family:'Space Grotesk',sans-serif;font-weight:700;color:#fff;font-size:3rem;"
         "line-height:1.03;letter-spacing:-.02em;margin:0}"
         ".pz h1 .tl{color:" + TEAL + "}"
         ".pz .sub{color:#C7D6EF;font-size:1.1rem;line-height:1.5;margin:16px 0 26px;max-width:40ch}"
-        ".pz .feats{display:flex;flex-wrap:wrap;gap:16px 28px;margin-bottom:6px}"
-        ".pz .feat{display:flex;align-items:center;gap:10px}"
-        ".pz .feat svg{width:22px;height:22px;flex:none}"
-        ".pz .feat span{color:#DCE8FB;font-size:.9rem;line-height:1.2}"
+        ".pz .feats{display:flex;flex-wrap:wrap;gap:14px 16px;margin-bottom:6px}"
+        ".pz .feat{display:flex;align-items:center;gap:9px}"
+        ".pz .feat svg{width:21px;height:21px;flex:none}"
+        ".pz .feat span{color:#DCE8FB;font-size:.84rem;line-height:1.2}"
         ".lockhead{display:flex;align-items:center;gap:12px;margin:2px 0 12px}"
         ".lockhead .ic{width:42px;height:42px;border-radius:12px;background:rgba(0,208,192,.14);"
         "display:flex;align-items:center;justify-content:center;font-size:1.15rem}"
@@ -416,20 +420,19 @@ def _render_portada():
         ".kpi .ksub{color:#8FA6CC;font-size:.76rem;margin-top:5px}"
         "</style>"
     )
-    _ksvg = {
-        "up": f'<svg viewBox="0 0 24 24" fill="none" stroke="{TEAL}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 7-7"/><path d="M17 7h4v4"/></svg>',
-        "ppl": f'<svg viewBox="0 0 24 24" fill="none" stroke="{TEAL}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3.5 20c0-3 2.6-5 5.5-5s5.5 2 5.5 5"/><path d="M16 6.5a2.8 2.8 0 0 1 0 5.5"/><path d="M20.5 20c0-2.2-1.5-3.8-3.5-4.3"/></svg>',
-        "cart": f'<svg viewBox="0 0 24 24" fill="none" stroke="{TEAL}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1.4"/><circle cx="17" cy="20" r="1.4"/><path d="M3 4h2l2.3 11h10l2-8H6.2"/></svg>',
-        "tg": f'<svg viewBox="0 0 24 24" fill="none" stroke="{TEAL}" stroke-width="2"><circle cx="12" cy="12" r="8.2"/><circle cx="12" cy="12" r="3.4"/></svg>',
-    }
-    def _kc(ic, lb, vl):
-        return (f'<div class="kpi"><div class="ktop"><div class="kic">{_ksvg[ic]}</div>'
-                f'<div class="klb">{lb}</div></div><div class="kvl">{vl}</div>'
-                '<div class="ksub">vs. mes anterior</div></div>')
-    _kpis = ('<div class="kpiwrap">' + _kc("up", "Ingresos", "+24.8%")
-             + _kc("ppl", "Clientes", "+12.3%") + _kc("cart", "Ventas", "+18.6%")
-             + _kc("tg", "Conversiones", "+9.4%") + "</div>")
-    L, _R = st.columns([1.05, 0.95], vertical_alignment="center")
+    # Fondo = tu imagen hero. El gradiente cubre la izquierda para que el login se lea,
+    # y a la derecha se ve la imagen (laptop + KPIs). La tarjeta de login va opaca.
+    if PORTADA_BG:
+        st.markdown(
+            "<style>[data-testid='stAppViewContainer']{background:"
+            "linear-gradient(90deg,#0A1628 0%,#0A1628 50%,rgba(10,22,40,0) 67%),"
+            f"url('{PORTADA_BG}') right center / auto 100% no-repeat fixed !important}}"
+            "[data-testid='stHeader']{background:transparent !important}"
+            "[data-testid='stVerticalBlockBorderWrapper']{background:rgba(9,19,38,.93) !important;"
+            "border:1px solid rgba(53,236,217,.2) !important;border-radius:18px !important;"
+            "box-shadow:0 22px 64px rgba(0,0,0,.5)}</style>",
+            unsafe_allow_html=True)
+    L, _R = st.columns([1.02, 0.98], vertical_alignment="center")
     with L:
         st.markdown(
             _css + f'<div class="pz">{_logo_html}'
@@ -452,8 +455,7 @@ def _render_portada():
                 st.error("Usuario o clave incorrectos.")
         st.markdown('<div class="pz"><div class="foot">¿Sin acceso? Escríbele al '
                     'Centro de Inteligencia de Negocios.</div></div>', unsafe_allow_html=True)
-    with _R:
-        st.markdown(_kpis, unsafe_allow_html=True)
+    # _R queda vacío a propósito: ahí se ve la imagen de fondo (laptop + KPIs).
 
 if "auth_ok" not in st.session_state:
     st.session_state.auth_ok = False
