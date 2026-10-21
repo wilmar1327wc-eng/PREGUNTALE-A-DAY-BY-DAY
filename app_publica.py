@@ -365,39 +365,67 @@ def _logout():
     st.session_state.auth_ok = False
 
 def _render_portada():
-    _logo_html = (f'<img src="{JOBTALENT}" style="height:44px;margin-bottom:16px" alt="job&amp;talent">'
-                  if JOBTALENT else "")
-    st.markdown(
+    _logo_html = (f'<img class="logo" src="{JOBTALENT}" alt="job&amp;talent">' if JOBTALENT else "")
+    _ic_chart = (f'<svg viewBox="0 0 24 24" fill="none" stroke="{TEAL}" stroke-width="2.1" '
+                 'stroke-linecap="round"><path d="M3 21h18"/><rect x="5" y="11" width="3.2" height="7" rx="1"/>'
+                 '<rect x="10.4" y="6" width="3.2" height="12" rx="1"/>'
+                 '<rect x="15.8" y="13" width="3.2" height="5" rx="1"/></svg>')
+    _ic_ai = (f'<svg viewBox="0 0 24 24" fill="none" stroke="{TEAL}" stroke-width="2.1" '
+              'stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.7 4.3L18 9l-4.3 1.7L12 15'
+              'l-1.7-4.3L6 9l4.3-1.7z"/><path d="M18.5 14l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z"/></svg>')
+    _ic_target = (f'<svg viewBox="0 0 24 24" fill="none" stroke="{TEAL}" stroke-width="2.1">'
+                  '<circle cx="12" cy="12" r="8.2"/><circle cx="12" cy="12" r="3.4"/></svg>')
+    _ic_bolt = (f'<svg viewBox="0 0 24 24" fill="none" stroke="{TEAL}" stroke-width="2.1" '
+                'stroke-linejoin="round" stroke-linecap="round"><path d="M13 2L4 14h6l-1 8 9-12h-6z"/></svg>')
+    _feats = (
+        f'<div class="feat">{_ic_chart}<span>KPIs en<br>tiempo real</span></div>'
+        f'<div class="feat">{_ic_ai}<span>Consultas con<br>IA avanzada</span></div>'
+        f'<div class="feat">{_ic_target}<span>Todas tus marcas<br>y negocios</span></div>'
+        f'<div class="feat">{_ic_bolt}<span>Decisiones más<br>rápidas y precisas</span></div>'
+    )
+    _css = (
         "<style>"
-        ".portada{max-width:470px;margin:7vh auto 0;text-align:center}"
-        ".portada .t{font-family:'Space Grotesk',sans-serif;font-weight:700;color:#fff;"
-        "font-size:2.4rem;line-height:1.06;letter-spacing:-.02em}"
-        ".portada .t .ia{display:inline-block;background:" + TEAL + ";color:#04233b;font-size:.32em;"
-        "font-weight:700;padding:.2em .55em;border-radius:.55em;vertical-align:middle;margin-left:.35em;"
-        "transform:translateY(-.18em)}"
-        ".portada .s{color:" + MUTED + ";font-size:1rem;margin:14px 0 2px}"
-        ".portada .lock{color:" + TEAL + ";font-size:.9rem;margin-top:12px;font-weight:600}"
-        ".loginfoot{max-width:470px;margin:16px auto 0;text-align:center;color:" + MUTED + ";font-size:.82rem}"
+        ".pz{max-width:600px}"
+        ".pz .logo{height:52px;margin-bottom:22px;border-radius:12px}"
+        ".pz h1{font-family:'Space Grotesk',sans-serif;font-weight:700;color:#fff;font-size:3rem;"
+        "line-height:1.03;letter-spacing:-.02em;margin:0}"
+        ".pz h1 .tl{color:" + TEAL + "}"
+        ".pz .sub{color:#C7D6EF;font-size:1.1rem;line-height:1.5;margin:16px 0 26px;max-width:40ch}"
+        ".pz .feats{display:flex;flex-wrap:wrap;gap:16px 28px;margin-bottom:6px}"
+        ".pz .feat{display:flex;align-items:center;gap:10px}"
+        ".pz .feat svg{width:22px;height:22px;flex:none}"
+        ".pz .feat span{color:#DCE8FB;font-size:.9rem;line-height:1.2}"
+        ".lockhead{display:flex;align-items:center;gap:12px;margin:2px 0 12px}"
+        ".lockhead .ic{width:42px;height:42px;border-radius:12px;background:rgba(0,208,192,.14);"
+        "display:flex;align-items:center;justify-content:center;font-size:1.15rem}"
+        ".lockhead h3{margin:0;color:#fff;font-family:'Space Grotesk';font-weight:700;font-size:1.25rem}"
+        ".lockhead p{margin:3px 0 0;color:" + MUTED + ";font-size:.86rem}"
+        ".pz .foot{color:" + MUTED + ";font-size:.85rem;margin-top:16px}"
         "</style>"
-        f'<div class="portada">{_logo_html}'
-        '<div class="t">Pregúntale a Day by Day<span class="ia">+ IA</span></div>'
-        '<div class="s">Centro de Inteligencia de Negocios · job&amp;talent</div>'
-        '<div class="lock">🔒 Acceso restringido · ingresa con tu usuario y clave</div></div>',
-        unsafe_allow_html=True)
-    _, cmid, _ = st.columns([1, 1.25, 1])
-    with cmid:
+    )
+    L, _R = st.columns([1.05, 0.95], vertical_alignment="center")
+    with L:
+        st.markdown(
+            _css + f'<div class="pz">{_logo_html}'
+            '<h1>Pregúntale a<br><span class="tl">Day by Day</span></h1>'
+            '<div class="sub">Tu copiloto de Inteligencia de Negocios para tomar mejores decisiones.</div>'
+            f'<div class="feats">{_feats}</div></div>',
+            unsafe_allow_html=True)
         with st.container(border=True):
+            st.markdown('<div class="lockhead"><div class="ic">🔒</div>'
+                        '<div><h3>Acceso restringido</h3><p>Ingresa con tu usuario y clave</p></div></div>',
+                        unsafe_allow_html=True)
             if not _usuarios():
                 st.caption("⚠️ Aún no hay usuarios configurados. Agrega la sección [usuarios] "
                            "al final de los Secrets de la app.")
             st.text_input("Usuario", key="login_user", placeholder="usuario")
             st.text_input("Clave", key="login_pass", type="password", placeholder="clave",
                           on_change=_check_login)
-            st.button("Entrar", type="primary", on_click=_check_login, use_container_width=True)
+            st.button("Entrar  →", type="primary", on_click=_check_login, use_container_width=True)
             if st.session_state.get("login_err"):
                 st.error("Usuario o clave incorrectos.")
-    st.markdown('<div class="loginfoot">¿Sin acceso? Escríbele al Centro de Inteligencia de Negocios.</div>',
-                unsafe_allow_html=True)
+        st.markdown('<div class="pz"><div class="foot">¿Sin acceso? Escríbele al '
+                    'Centro de Inteligencia de Negocios.</div></div>', unsafe_allow_html=True)
 
 if "auth_ok" not in st.session_state:
     st.session_state.auth_ok = False
