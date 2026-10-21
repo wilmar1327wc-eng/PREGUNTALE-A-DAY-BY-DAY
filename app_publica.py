@@ -401,8 +401,34 @@ def _render_portada():
         ".lockhead h3{margin:0;color:#fff;font-family:'Space Grotesk';font-weight:700;font-size:1.25rem}"
         ".lockhead p{margin:3px 0 0;color:" + MUTED + ";font-size:.86rem}"
         ".pz .foot{color:" + MUTED + ";font-size:.85rem;margin-top:16px}"
+        # --- tarjetas KPI flotantes (derecha, decorativas) ---
+        ".kpiwrap{display:grid;grid-template-columns:1fr 1fr;gap:18px;max-width:500px;margin:0 auto;padding:6px}"
+        ".kpiwrap .kpi:nth-child(2n){margin-top:40px}"
+        ".kpi{background:rgba(12,27,60,.5);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);"
+        "border:1px solid rgba(53,236,217,.22);border-radius:18px;padding:18px;"
+        "box-shadow:0 14px 44px rgba(0,0,0,.38)}"
+        ".kpi .ktop{display:flex;align-items:center;gap:10px;margin-bottom:12px}"
+        ".kpi .kic{width:38px;height:38px;border-radius:11px;background:rgba(0,208,192,.15);"
+        "display:flex;align-items:center;justify-content:center}"
+        ".kpi .kic svg{width:20px;height:20px}"
+        ".kpi .klb{color:#C7D6EF;font-size:.92rem}"
+        ".kpi .kvl{color:#fff;font-family:'Space Grotesk';font-weight:700;font-size:1.75rem;line-height:1}"
+        ".kpi .ksub{color:#8FA6CC;font-size:.76rem;margin-top:5px}"
         "</style>"
     )
+    _ksvg = {
+        "up": f'<svg viewBox="0 0 24 24" fill="none" stroke="{TEAL}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 7-7"/><path d="M17 7h4v4"/></svg>',
+        "ppl": f'<svg viewBox="0 0 24 24" fill="none" stroke="{TEAL}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3.5 20c0-3 2.6-5 5.5-5s5.5 2 5.5 5"/><path d="M16 6.5a2.8 2.8 0 0 1 0 5.5"/><path d="M20.5 20c0-2.2-1.5-3.8-3.5-4.3"/></svg>',
+        "cart": f'<svg viewBox="0 0 24 24" fill="none" stroke="{TEAL}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1.4"/><circle cx="17" cy="20" r="1.4"/><path d="M3 4h2l2.3 11h10l2-8H6.2"/></svg>',
+        "tg": f'<svg viewBox="0 0 24 24" fill="none" stroke="{TEAL}" stroke-width="2"><circle cx="12" cy="12" r="8.2"/><circle cx="12" cy="12" r="3.4"/></svg>',
+    }
+    def _kc(ic, lb, vl):
+        return (f'<div class="kpi"><div class="ktop"><div class="kic">{_ksvg[ic]}</div>'
+                f'<div class="klb">{lb}</div></div><div class="kvl">{vl}</div>'
+                '<div class="ksub">vs. mes anterior</div></div>')
+    _kpis = ('<div class="kpiwrap">' + _kc("up", "Ingresos", "+24.8%")
+             + _kc("ppl", "Clientes", "+12.3%") + _kc("cart", "Ventas", "+18.6%")
+             + _kc("tg", "Conversiones", "+9.4%") + "</div>")
     L, _R = st.columns([1.05, 0.95], vertical_alignment="center")
     with L:
         st.markdown(
@@ -426,6 +452,8 @@ def _render_portada():
                 st.error("Usuario o clave incorrectos.")
         st.markdown('<div class="pz"><div class="foot">¿Sin acceso? Escríbele al '
                     'Centro de Inteligencia de Negocios.</div></div>', unsafe_allow_html=True)
+    with _R:
+        st.markdown(_kpis, unsafe_allow_html=True)
 
 if "auth_ok" not in st.session_state:
     st.session_state.auth_ok = False
