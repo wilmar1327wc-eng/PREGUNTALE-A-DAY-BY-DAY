@@ -425,8 +425,9 @@ def _render_portada():
     if PORTADA_BG:
         st.markdown(
             "<style>[data-testid='stAppViewContainer']{background:"
-            "linear-gradient(90deg,#0A1628 0%,#0A1628 50%,rgba(10,22,40,0) 67%),"
-            f"url('{PORTADA_BG}') right center / auto 100% no-repeat fixed !important}}"
+            "linear-gradient(90deg,rgba(8,18,36,.97) 0%,rgba(8,18,36,.9) 36%,"
+            "rgba(8,18,36,.55) 54%,rgba(8,18,36,.12) 74%,rgba(8,18,36,.25) 100%),"
+            f"url('{PORTADA_BG}') center center / cover no-repeat fixed !important}}"
             "[data-testid='stHeader']{background:transparent !important}"
             "[data-testid='stVerticalBlockBorderWrapper']{background:rgba(9,19,38,.93) !important;"
             "border:1px solid rgba(53,236,217,.2) !important;border-radius:18px !important;"
