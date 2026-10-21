@@ -620,8 +620,13 @@ if LOGOS:
 # ---------- Registro de actividad (solo ADMINISTRADOR) ----------
 if st.session_state.get("auth_user") == "administrador":
     with st.expander("📋 Registro de actividad — quién entra y qué consulta"):
-        _res = motor.log_resumen()
-        _det = motor.log_listar(300)
+        _fres = getattr(motor, "log_resumen", None)
+        _fdet = getattr(motor, "log_listar", None)
+        try:
+            _res = _fres() if _fres else None
+            _det = _fdet(300) if _fdet else None
+        except Exception:
+            _res = _det = None
         if _res is not None and not _res.empty:
             st.markdown("**Resumen por usuario**")
             st.dataframe(_res, width="stretch", hide_index=True)
