@@ -671,6 +671,13 @@ def do_ia():
     except Exception:
         pass
 
+def _nueva_busqueda():
+    # Limpia todos los filtros y el resultado: borra las llaves de los widgets
+    # (vuelven a su valor por defecto) y deja la consulta en blanco.
+    for _k in ("m_marca", "m_ind", "m_per", "m_dim", "m_pdv", "m_func", "m_free"):
+        st.session_state.pop(_k, None)
+    st.session_state.consulta = None
+
 def c_pdv_lista(marca):
     # Puntos de la marca para el selector. Sin caché: si construyes cubo_pdv después de
     # abrir el app, se recupera solo (no se queda pegado en "vacío").
@@ -876,8 +883,10 @@ with st.container(border=True):
     func_sel = d2.selectbox("Funcionario", _func_opts, key="m_func",
                             help="Haz clic y escribe para buscar por nombre o ID.")
 
-    bcol, _bsp = st.columns([0.32, 0.68])
-    bcol.button("Consultar", type="primary", on_click=do_menu)
+    bcol, bcol2, _bsp = st.columns([0.26, 0.34, 0.40])
+    bcol.button("Consultar", type="primary", on_click=do_menu, use_container_width=True)
+    bcol2.button("↺  Nueva búsqueda", on_click=_nueva_busqueda, use_container_width=True,
+                 help="Borra los filtros y el resultado para empezar de cero.")
 
     st.markdown('<div class="askq">¿Algo más puntual? Pregúntame con tus palabras.</div>', unsafe_allow_html=True)
     f1, f2 = st.columns([1, 0.24], vertical_alignment="bottom")
