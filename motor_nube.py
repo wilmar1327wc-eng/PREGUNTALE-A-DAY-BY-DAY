@@ -725,6 +725,55 @@ def func_top(ids, dom, ventana, metrica, n=12, min_base=10):
     return rows[:n]
 
 
+# ===================================================================
+# LOG DE ACTIVIDAD (quién entra y qué consulta) — tabla log_actividad en Neon.
+# No guarda datos personales: solo el usuario de la app (marca/administrador) y la acción.
+# ===================================================================
+def log_evento(usuario, evento, detalle=""):
+    """Registra un evento (login/consulta/ia). Nunca rompe la app si falla."""
+    try:
+        url = _url()
+        if not url or not usuario:
+            return
+        conn = psycopg2.connect(url)
+        try:
+            cur = conn.cursor()
+            cur.execute("CREATE TABLE IF NOT EXISTS log_actividad ("
+                        "id SERIAL PRIMARY KEY, usuario TEXT, evento TEXT, detalle TEXT, "
+                        "ts TIMESTAMPTZ DEFAULT now())")
+            cur.execute("INSERT INTO log_actividad (usuario, evento, detalle) VALUES (%s,%s,%s)",
+                        (str(usuario)[:60], str(evento)[:30], str(detalle)[:300]))
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+
+def log_resumen():
+    """Resumen por usuario: # ingresos, # consultas y último acceso (hora Bogotá)."""
+    try:
+        return run_df(
+            "SELECT usuario, "
+            "SUM(CASE WHEN evento='login' THEN 1 ELSE 0 END) AS ingresos, "
+            "SUM(CASE WHEN evento IN ('consulta','ia') THEN 1 ELSE 0 END) AS consultas, "
+            "to_char(MAX(ts) AT TIME ZONE 'America/Bogota','YYYY-MM-DD HH24:MI') AS ultimo_acceso "
+            "FROM log_actividad GROUP BY usuario ORDER BY MAX(ts) DESC")
+    except Exception:
+        return None
+
+
+def log_listar(n=300):
+    """Últimos n eventos para el detalle del panel (hora Bogotá)."""
+    try:
+        return run_df(
+            "SELECT to_char(ts AT TIME ZONE 'America/Bogota','YYYY-MM-DD HH24:MI') AS fecha, "
+            "usuario, evento, detalle FROM log_actividad ORDER BY ts DESC LIMIT %(n)s",
+            {"n": int(n)})
+    except Exception:
+        return None
+
+
 # Métricas rápidas para los chips/preselector (sin IA): etiqueta -> (dominio, metrica)
 PRESET_METRICAS = {
     "Ventas": ("ventas", "venta_total"),

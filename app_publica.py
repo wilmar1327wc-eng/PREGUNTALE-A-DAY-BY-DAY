@@ -361,6 +361,10 @@ def _check_login():
         st.session_state.auth_ok = True
         st.session_state.auth_user = u
         st.session_state.login_err = False
+        try:
+            motor.log_evento(u, "login")
+        except Exception:
+            pass
     else:
         st.session_state.auth_ok = False
         st.session_state.login_err = True
@@ -613,6 +617,20 @@ if LOGOS:
     _r = "".join(f'<span class="lchip"><img src="{u}"></span>' for u in LOGOS.values())
     st.markdown(f'<div class="clients"><span class="lbl">Clientes</span>{_r}</div>', unsafe_allow_html=True)
 
+# ---------- Registro de actividad (solo ADMINISTRADOR) ----------
+if st.session_state.get("auth_user") == "administrador":
+    with st.expander("📋 Registro de actividad — quién entra y qué consulta"):
+        _res = motor.log_resumen()
+        _det = motor.log_listar(300)
+        if _res is not None and not _res.empty:
+            st.markdown("**Resumen por usuario**")
+            st.dataframe(_res, width="stretch", hide_index=True)
+        if _det is not None and not _det.empty:
+            st.markdown("**Últimos movimientos**")
+            st.dataframe(_det, width="stretch", hide_index=True)
+        if (_res is None or _res.empty) and (_det is None or _det.empty):
+            st.caption("Aún no hay actividad. La tabla se crea sola con el primer ingreso.")
+
 
 # ===================================================================
 # Menú de consulta (deterministico, sin IA) + pregunta libre (con IA)
@@ -631,6 +649,11 @@ def do_menu():
         "pdv": st.session_state.get("m_pdv"),
         "func": st.session_state.get("m_func"),
     }
+    try:
+        _d = f"{st.session_state.get('m_marca')} · {st.session_state.get('m_ind')} · {st.session_state.get('m_per')}"
+        motor.log_evento(st.session_state.get("auth_user"), "consulta", _d)
+    except Exception:
+        pass
 
 def do_ia():
     q = (st.session_state.get("m_free") or "").strip()
@@ -638,6 +661,10 @@ def do_ia():
         return
     intp, usado = motor.interpretar(q, marcas)
     st.session_state.consulta = {"via": "ia", "intp": intp, "usado": usado}
+    try:
+        motor.log_evento(st.session_state.get("auth_user"), "ia", q)
+    except Exception:
+        pass
 
 def c_pdv_lista(marca):
     # Puntos de la marca para el selector. Sin caché: si construyes cubo_pdv después de
