@@ -642,26 +642,34 @@ if st.session_state.get("auth_user") == "administrador":
 # ===================================================================
 if "consulta" not in st.session_state:
     st.session_state.consulta = None   # arranca limpio: nada hasta que el usuario pida
+if "form_nonce" not in st.session_state:
+    st.session_state.form_nonce = 0    # sube con "Nueva búsqueda" -> widgets nuevos
+
+# Las casillas usan llaves con este sufijo. Al resetear cambiamos el sufijo y los
+# widgets nacen de cero (vuelven a su placeholder), sin importar la versión de Streamlit.
+_FORM_FIELDS = ("m_marca", "m_ind", "m_per", "m_dim", "m_pdv", "m_func", "m_free")
+def _wk(name):
+    return f"{name}__{st.session_state.get('form_nonce', 0)}"
 
 def do_menu():
     # Congela lo elegido en el momento de pulsar Consultar (no reacciona a cambios sueltos)
     st.session_state.consulta = {
         "via": "menu",
-        "marca": st.session_state.get("m_marca"),
-        "ind": st.session_state.get("m_ind"),
-        "per": st.session_state.get("m_per"),
-        "dim": st.session_state.get("m_dim"),
-        "pdv": st.session_state.get("m_pdv"),
-        "func": st.session_state.get("m_func"),
+        "marca": st.session_state.get(_wk("m_marca")),
+        "ind": st.session_state.get(_wk("m_ind")),
+        "per": st.session_state.get(_wk("m_per")),
+        "dim": st.session_state.get(_wk("m_dim")),
+        "pdv": st.session_state.get(_wk("m_pdv")),
+        "func": st.session_state.get(_wk("m_func")),
     }
     try:
-        _d = f"{st.session_state.get('m_marca')} · {st.session_state.get('m_ind')} · {st.session_state.get('m_per')}"
+        _d = f"{st.session_state.get(_wk('m_marca'))} · {st.session_state.get(_wk('m_ind'))} · {st.session_state.get(_wk('m_per'))}"
         motor.log_evento(st.session_state.get("auth_user"), "consulta", _d)
     except Exception:
         pass
 
 def do_ia():
-    q = (st.session_state.get("m_free") or "").strip()
+    q = (st.session_state.get(_wk("m_free")) or "").strip()
     if not q:
         return
     intp, usado = motor.interpretar(q, marcas)
@@ -672,10 +680,12 @@ def do_ia():
         pass
 
 def _nueva_busqueda():
-    # Limpia todos los filtros y el resultado: borra las llaves de los widgets
-    # (vuelven a su valor por defecto) y deja la consulta en blanco.
-    for _k in ("m_marca", "m_ind", "m_per", "m_dim", "m_pdv", "m_func", "m_free"):
-        st.session_state.pop(_k, None)
+    # Reset infalible: borra las llaves actuales y sube el sufijo -> los widgets se
+    # recrean vacíos (placeholder). Funciona en cualquier versión de Streamlit.
+    _n = st.session_state.get("form_nonce", 0)
+    for _f in _FORM_FIELDS:
+        st.session_state.pop(f"{_f}__{_n}", None)
+    st.session_state.form_nonce = _n + 1
     st.session_state.consulta = None
 
 def c_pdv_lista(marca):
@@ -860,11 +870,11 @@ with st.container(border=True):
     # Todas arrancan vacías con un texto guía: nada preseleccionado.
     c1, c2, c3, c4 = st.columns([1.3, 1, 1, 1], vertical_alignment="bottom")
     marca_sel = c1.selectbox("Marca / cliente", op_marca, index=None,
-                             placeholder="Selecciona un cliente", key="m_marca")
+                             placeholder="Selecciona un cliente", key=_wk("m_marca"))
     ind_sel = c2.selectbox("Indicador", ind_labels, index=None,
-                           placeholder="Selecciona un indicador", key="m_ind")
+                           placeholder="Selecciona un indicador", key=_wk("m_ind"))
     per_sel = c3.selectbox(
-        "Período", motor.VENTANAS, index=None, placeholder="Selecciona un período", key="m_per",
+        "Período", motor.VENTANAS, index=None, placeholder="Selecciona un período", key=_wk("m_per"),
         format_func=lambda k: motor.VENTANA_LABEL.get(k, k).capitalize(),
     )
     # "Ver por" depende del indicador: sin indicador no hay opciones (queda deshabilitado)
@@ -873,10 +883,10 @@ with st.container(border=True):
         _dims = motor.DOMINIOS[_dom_sel]["dimensiones"]
     else:
         _dims = []
-    if st.session_state.get("m_dim") not in _dims:
-        st.session_state.pop("m_dim", None)   # evita arrastrar un valor de otro indicador
+    if st.session_state.get(_wk("m_dim")) not in _dims:
+        st.session_state.pop(_wk("m_dim"), None)   # evita arrastrar un valor de otro indicador
     dim_sel = c4.selectbox(
-        "Ver por", _dims, index=None, placeholder="Selecciona una opción", key="m_dim",
+        "Ver por", _dims, index=None, placeholder="Selecciona una opción", key=_wk("m_dim"),
         format_func=lambda s: DIM_LABEL.get(s, s.replace("_", " ")).capitalize(),
         disabled=not ind_sel,
     )
@@ -885,18 +895,18 @@ with st.container(border=True):
     d1, d2 = st.columns([1, 1], vertical_alignment="bottom")
     _pdvs = c_pdv_lista(marca_sel) if _tiene_marca else []
     _pdv_opts = ["(Todos los puntos)"] + [f"{nm}  ·  ID {pid}" for pid, nm in _pdvs]
-    if st.session_state.get("m_pdv") not in _pdv_opts:
-        st.session_state.pop("m_pdv", None)   # limpia si cambió la marca
+    if st.session_state.get(_wk("m_pdv")) not in _pdv_opts:
+        st.session_state.pop(_wk("m_pdv"), None)   # limpia si cambió la marca
     pdv_sel = d1.selectbox("Punto de venta", _pdv_opts, index=None,
-                           placeholder="Selecciona un punto de venta", key="m_pdv",
+                           placeholder="Selecciona un punto de venta", key=_wk("m_pdv"),
                            disabled=not _tiene_marca,
                            help="Haz clic y escribe para buscar por nombre o ID.")
     _funcs = c_func_lista(marca_sel) if _tiene_marca else []
     _func_opts = ["(Todos los funcionarios)"] + [f"{nm}  ·  ID {fid}" for fid, nm in _funcs]
-    if st.session_state.get("m_func") not in _func_opts:
-        st.session_state.pop("m_func", None)   # limpia si cambió la marca
+    if st.session_state.get(_wk("m_func")) not in _func_opts:
+        st.session_state.pop(_wk("m_func"), None)   # limpia si cambió la marca
     func_sel = d2.selectbox("Funcionario", _func_opts, index=None,
-                            placeholder="Selecciona un funcionario", key="m_func",
+                            placeholder="Selecciona un funcionario", key=_wk("m_func"),
                             disabled=not _tiene_marca,
                             help="Haz clic y escribe para buscar por nombre o ID.")
 
@@ -908,7 +918,7 @@ with st.container(border=True):
     st.markdown('<div class="askq">¿Algo más puntual? Pregúntame con tus palabras.</div>', unsafe_allow_html=True)
     f1, f2 = st.columns([1, 0.24], vertical_alignment="bottom")
     f1.text_input(
-        "Pregunta libre", key="m_free", label_visibility="collapsed",
+        "Pregunta libre", key=_wk("m_free"), label_visibility="collapsed",
         placeholder="Ej: ¿cómo va el % de agotados de Derco por cadena este trimestre?",
     )
     f2.button("Preguntar con IA", type="secondary", on_click=do_ia)
