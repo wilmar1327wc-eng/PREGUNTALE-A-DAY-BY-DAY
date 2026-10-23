@@ -857,30 +857,47 @@ with st.container(border=True):
         unsafe_allow_html=True,
     )
     # Fila 1: define QUÉ ver (marca, indicador, período, ver por)
+    # Todas arrancan vacías con un texto guía: nada preseleccionado.
     c1, c2, c3, c4 = st.columns([1.3, 1, 1, 1], vertical_alignment="bottom")
-    marca_sel = c1.selectbox("Marca / cliente", op_marca, key="m_marca")
-    ind_sel = c2.selectbox("Indicador", ind_labels, key="m_ind")
+    marca_sel = c1.selectbox("Marca / cliente", op_marca, index=None,
+                             placeholder="Selecciona un cliente", key="m_marca")
+    ind_sel = c2.selectbox("Indicador", ind_labels, index=None,
+                           placeholder="Selecciona un indicador", key="m_ind")
     per_sel = c3.selectbox(
-        "Período", motor.VENTANAS, index=motor.VENTANAS.index("3m"), key="m_per",
+        "Período", motor.VENTANAS, index=None, placeholder="Selecciona un período", key="m_per",
         format_func=lambda k: motor.VENTANA_LABEL.get(k, k).capitalize(),
     )
-    _dom_sel = PRESET_METRICAS[ind_sel][0]
-    _dims = motor.DOMINIOS[_dom_sel]["dimensiones"]
-    _defdim = motor.DOMINIOS[_dom_sel]["dimension_default"]
+    # "Ver por" depende del indicador: sin indicador no hay opciones (queda deshabilitado)
+    if ind_sel:
+        _dom_sel = PRESET_METRICAS[ind_sel][0]
+        _dims = motor.DOMINIOS[_dom_sel]["dimensiones"]
+    else:
+        _dims = []
+    if st.session_state.get("m_dim") not in _dims:
+        st.session_state.pop("m_dim", None)   # evita arrastrar un valor de otro indicador
     dim_sel = c4.selectbox(
-        "Ver por", _dims, index=_dims.index(_defdim) if _defdim in _dims else 0, key="m_dim",
+        "Ver por", _dims, index=None, placeholder="Selecciona una opción", key="m_dim",
         format_func=lambda s: DIM_LABEL.get(s, s.replace("_", " ")).capitalize(),
+        disabled=not ind_sel,
     )
     # Fila 2: acercar a UN punto o a UNA persona (opcional, depende de la marca)
     _tiene_marca = bool(marca_sel) and marca_sel != "Todas las marcas"
     d1, d2 = st.columns([1, 1], vertical_alignment="bottom")
     _pdvs = c_pdv_lista(marca_sel) if _tiene_marca else []
     _pdv_opts = ["(Todos los puntos)"] + [f"{nm}  ·  ID {pid}" for pid, nm in _pdvs]
-    pdv_sel = d1.selectbox("Punto de venta", _pdv_opts, key="m_pdv",
+    if st.session_state.get("m_pdv") not in _pdv_opts:
+        st.session_state.pop("m_pdv", None)   # limpia si cambió la marca
+    pdv_sel = d1.selectbox("Punto de venta", _pdv_opts, index=None,
+                           placeholder="Selecciona un punto de venta", key="m_pdv",
+                           disabled=not _tiene_marca,
                            help="Haz clic y escribe para buscar por nombre o ID.")
     _funcs = c_func_lista(marca_sel) if _tiene_marca else []
     _func_opts = ["(Todos los funcionarios)"] + [f"{nm}  ·  ID {fid}" for fid, nm in _funcs]
-    func_sel = d2.selectbox("Funcionario", _func_opts, key="m_func",
+    if st.session_state.get("m_func") not in _func_opts:
+        st.session_state.pop("m_func", None)   # limpia si cambió la marca
+    func_sel = d2.selectbox("Funcionario", _func_opts, index=None,
+                            placeholder="Selecciona un funcionario", key="m_func",
+                            disabled=not _tiene_marca,
                             help="Haz clic y escribe para buscar por nombre o ID.")
 
     bcol, bcol2, _bsp = st.columns([0.26, 0.34, 0.40])
@@ -932,14 +949,21 @@ if cons["via"] == "ia":
         st.stop()
     logo = LOGOS.get((cname or "").strip().upper())
 else:
-    ind = cons.get("ind") or ind_labels[0]
+    # Lo esencial: sin marca, indicador o período no consultamos; se vuelve a pedir.
+    if not cons.get("marca") or not cons.get("ind") or not cons.get("per"):
+        st.markdown(
+            '<div class="empty">Elige <b>marca</b>, <b>indicador</b> y <b>período</b>, '
+            'y pulsa <b>Consultar</b>.</div>', unsafe_allow_html=True)
+        st.markdown(PIE, unsafe_allow_html=True)
+        st.stop()
+    ind = cons.get("ind")
     dom, metrica = PRESET_METRICAS[ind]
-    ventana = cons.get("per") or "3m"
+    ventana = cons.get("per")
     dimension = cons.get("dim")
     dims_ok = motor.DOMINIOS[dom]["dimensiones"]
     if dimension not in dims_ok:
         dimension = motor.DOMINIOS[dom]["dimension_default"]
-    marca_name = cons.get("marca") or op_marca[0]
+    marca_name = cons.get("marca")
     if marca_name == "Todas las marcas":
         ids = sorted({i for v in marcas.values() for i in v})
         cname, logo = "Todas las marcas", None
