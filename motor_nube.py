@@ -725,6 +725,21 @@ def func_top(ids, dom, ventana, metrica, n=12, min_base=10):
     return rows[:n]
 
 
+def pdv_funcionarios(ids, pdv_id, ventana):
+    """Funcionarios que estuvieron en un PDV en el período (en cualquier indicador).
+    Devuelve [(funcionario_id, nombre, total_capturas, indicadores_csv)], de más a menos."""
+    ini = _FECHA.get(ventana, _FECHA["3m"])
+    binds = {"pid": int(pdv_id)}
+    idsph = _ids_ph(ids, binds)
+    df = run_df(
+        f"SELECT funcionario_id, MAX(funcionario) AS funcionario, SUM(capturas) AS n, "
+        f"STRING_AGG(DISTINCT indicador, ',' ORDER BY indicador) AS indicadores "
+        f"FROM cubo_pdv_func WHERE cliente_id IN ({idsph}) AND pdv_id = %(pid)s "
+        f"AND mes >= date_trunc('month', {ini}) GROUP BY funcionario_id ORDER BY 3 DESC", binds)
+    return [(int(r["funcionario_id"]), str(r["funcionario"]), int(r["n"] or 0),
+             str(r["indicadores"] or "")) for _, r in df.iterrows()] if not df.empty else []
+
+
 # ===================================================================
 # LOG DE ACTIVIDAD (quién entra y qué consulta) — tabla log_actividad en Neon.
 # No guarda datos personales: solo el usuario de la app (marca/administrador) y la acción.

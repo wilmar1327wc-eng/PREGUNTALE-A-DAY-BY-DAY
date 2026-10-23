@@ -731,6 +731,42 @@ def _render_pdv_card(ids, pid, nm, marca, ventana, logo):
         f'<b>{hechos}</b> de {len(labels)} indicadores. Los que salen en ❌ aún no tienen captura en el período.</div>',
         unsafe_allow_html=True,
     )
+    # ¿Quiénes estuvieron en este punto? (en cualquier indicador, en el período)
+    try:
+        fn = motor.pdv_funcionarios(ids, pid, ventana)
+    except Exception:
+        fn = None   # la tabla cubo_pdv_func aún no existe (falta reconstruir el cubo)
+    if fn:
+        _lab = getattr(motor, "FUN_IND_LABEL", {"ingresos": "Ingresos", "agotados": "Agotados",
+                       "precios": "Precios", "actividades": "Actividades", "encuestas": "Encuestas"})
+        def _fmtn(x):
+            return f"{int(x):,}".replace(",", ".")
+        def _inds(csv):
+            return " · ".join(_lab.get(t, t.capitalize()) for t in csv.split(",") if t)
+        items = "".join(
+            f'<li><span class="fn">{_html.escape(str(nm2))}'
+            f'<span class="fid">ID {fid2}</span></span>'
+            f'<span class="fmeta"><span class="fi">{_html.escape(_inds(inds))}</span>'
+            f'<span class="fc">{_fmtn(n2)}</span></span></li>'
+            for fid2, nm2, n2, inds in fn)
+        st.markdown(
+            "<style>.fnpdv{margin-top:12px;border:1px solid #22406E;border-radius:12px;"
+            "background:#0F2146;padding:10px 14px}.fnpdv h4{margin:0 0 6px;"
+            "font-family:'Space Grotesk';font-size:1rem;color:#35ECD9}"
+            ".fnpdv ul{list-style:none;margin:0;padding:0}.fnpdv li{display:flex;"
+            "justify-content:space-between;align-items:center;gap:12px;padding:6px 0;"
+            "border-top:1px solid #16305A;color:#ECF3FF;font-size:.95rem}"
+            ".fnpdv li:first-child{border-top:none}.fnpdv .fid{color:#9DB4DA;font-size:.8rem;"
+            "margin-left:8px}.fnpdv .fmeta{display:flex;align-items:center;gap:14px}"
+            ".fnpdv .fi{color:#9DB4DA;font-size:.82rem}.fnpdv .fc{color:#35ECD9;"
+            "font-variant-numeric:tabular-nums;min-width:50px;text-align:right}</style>"
+            f'<div class="fnpdv"><h4>Funcionarios en este punto · {len(fn)}</h4><ul>{items}</ul>'
+            '<div style="color:#9DB4DA;font-size:.78rem;margin-top:8px">'
+            'Personas activas con captura en el período · el número es el total de capturas.</div></div>',
+            unsafe_allow_html=True)
+    elif fn is None and st.session_state.get("auth_user") == "administrador":
+        st.caption("ℹ️ “Funcionarios en este punto” se activa al reconstruir el cubo "
+                   "(refresco con:  python refresco_cubo.py pdvfunc).")
     st.markdown(PIE, unsafe_allow_html=True)
     st.stop()
 
