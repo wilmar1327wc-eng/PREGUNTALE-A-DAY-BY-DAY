@@ -13,6 +13,7 @@ Las métricas se recomponen desde las medidas agregadas del cubo
 """
 
 import os
+import re
 import json
 import psycopg2
 import pandas as pd
@@ -229,10 +230,23 @@ def _heuristica(pregunta, marcas):
     elif "30" in q:
         ven = "30d"
 
+    # Entidad concreta (sin LLM): detecta un ID explícito + palabra clave. Los nombres
+    # propios se los dejamos al LLM; aquí solo cubrimos "... punto 12345" o "... funcionario 678".
+    func_s = punto_s = None
+    mnum = re.search(r"\bid\s*[:#]?\s*(\d{2,9})\b", q) or re.search(r"\b(\d{3,9})\b", q)
+    if mnum:
+        n = mnum.group(1)
+        if any(w in q for w in ["punto", "pdv", "tienda", "almac", "local", "sucursal"]):
+            punto_s = n
+        elif any(w in q for w in ["funcionario", "persona", "promotor", "asesor", "mercader",
+                                  "impulsador", "supervisor", "vendedor", "empleado"]):
+            func_s = n
+
     # En tema si menciona un indicador de DBD o uno de los clientes gestionados.
     return {"dominio": dom, "cliente_ids": cids, "cliente_nombre": cname,
             "metrica": None, "dimension": dim, "ventana": ven,
-            "en_tema": bool(hit or cname)}
+            "funcionario": func_s, "punto": punto_s,
+            "en_tema": bool(hit or cname or func_s or punto_s)}
 
 
 def _prompt(pregunta, marcas):
@@ -250,7 +264,12 @@ def _prompt(pregunta, marcas):
         "false si es ajena, p.ej. saludos, chistes, cultura general, código, otra empresa), "
         "dominio (uno válido), cliente (nombre exacto o null), "
         "metrica (clave válida del dominio o null), dimension (clave válida o null), "
-        'ventana (de la lista; si no se menciona "6m").\n\n'
+        'ventana (de la lista; si no se menciona "6m"), '
+        "funcionario (si la pregunta es sobre UNA persona concreta nombrada o por su ID, "
+        "pon su NOMBRE tal cual o el ID; si no, null. OJO: 'por funcionario'/'por cargo' NO es "
+        "una persona, es dimension=cargo), "
+        "punto (si la pregunta es sobre UN punto de venta concreto por nombre o ID, pon su "
+        "nombre o ID; si no, null. 'por pdv'/'por punto' NO es un punto, es dimension=pdv).\n\n"
         f'Pregunta: "{pregunta}"'
     )
 
@@ -259,9 +278,13 @@ def _parse(data, marcas):
     dom = data.get("dominio") if data.get("dominio") in DOMINIOS else "agotados"
     cname = data.get("cliente")
     cids = marcas.get(cname) if cname in marcas else None
+    def _ent(v):
+        v = str(v).strip() if v is not None else ""
+        return v or None
     return {"dominio": dom, "cliente_ids": cids, "cliente_nombre": cname if cids else None,
             "metrica": data.get("metrica"), "dimension": data.get("dimension"),
             "ventana": data.get("ventana") if data.get("ventana") in VENTANAS else "6m",
+            "funcionario": _ent(data.get("funcionario")), "punto": _ent(data.get("punto")),
             "en_tema": bool(data.get("en_dominio", True))}
 
 
@@ -790,6 +813,77 @@ def func_cargos(func_ids):
                 if r["cargo"] is not None and str(r["cargo"]).strip()}
     except Exception:
         return {}
+
+
+def _palabras(texto):
+    """Palabras >= 3 letras/dígitos de un texto, en minúscula (para buscar por nombre)."""
+    return [w for w in re.findall(r"[0-9a-záéíóúñ]+", str(texto or "").lower()) if len(w) >= 3][:5]
+
+
+def buscar_funcionarios(texto, ids=None, limite=12):
+    """Busca funcionarios por ID (exacto) o por NOMBRE (todas las palabras).
+    ids=None => busca en TODAS las marcas. Devuelve [(funcionario_id, nombre, marca)]."""
+    try:
+        t = str(texto or "").strip()
+        if not t:
+            return []
+        binds = {}
+        conds = []
+        if ids:
+            conds.append(f"f.cliente_id IN ({_ids_ph(ids, binds)})")
+        if t.isdigit():
+            binds["fid"] = int(t)
+            conds.append("f.funcionario_id = %(fid)s")
+        else:
+            pal = _palabras(t)
+            if not pal:
+                return []
+            for i, w in enumerate(pal):
+                k = f"w{i}"
+                binds[k] = f"%{w}%"
+                conds.append(f"LOWER(f.funcionario) LIKE %({k})s")
+        df = run_df(
+            f"SELECT f.funcionario_id, MAX(f.funcionario) AS funcionario, MAX(c.marca) AS marca "
+            f"FROM cubo_funcionarios f LEFT JOIN cubo_clientes c ON c.cliente_id = f.cliente_id "
+            f"WHERE {' AND '.join(conds)} GROUP BY f.funcionario_id ORDER BY 2 LIMIT {int(limite)}", binds)
+        return [(int(r["funcionario_id"]), str(r["funcionario"]),
+                 str(r["marca"]) if r["marca"] is not None else "") for _, r in df.iterrows()] \
+            if not df.empty else []
+    except Exception:
+        return []
+
+
+def buscar_pdvs(texto, ids=None, limite=12):
+    """Busca puntos de venta por ID (exacto) o por NOMBRE (todas las palabras).
+    ids=None => busca en TODAS las marcas. Devuelve [(pdv_id, nombre, marca)]."""
+    try:
+        t = str(texto or "").strip()
+        if not t:
+            return []
+        binds = {}
+        conds = []
+        if ids:
+            conds.append(f"p.cliente_id IN ({_ids_ph(ids, binds)})")
+        if t.isdigit():
+            binds["pid"] = int(t)
+            conds.append("p.pdv_id = %(pid)s")
+        else:
+            pal = _palabras(t)
+            if not pal:
+                return []
+            for i, w in enumerate(pal):
+                k = f"w{i}"
+                binds[k] = f"%{w}%"
+                conds.append(f"LOWER(p.pdv) LIKE %({k})s")
+        df = run_df(
+            f"SELECT p.pdv_id, MAX(p.pdv) AS pdv, MAX(c.marca) AS marca "
+            f"FROM cubo_pdv p LEFT JOIN cubo_clientes c ON c.cliente_id = p.cliente_id "
+            f"WHERE {' AND '.join(conds)} GROUP BY p.pdv_id ORDER BY 2 LIMIT {int(limite)}", binds)
+        return [(int(r["pdv_id"]), str(r["pdv"]),
+                 str(r["marca"]) if r["marca"] is not None else "") for _, r in df.iterrows()] \
+            if not df.empty else []
+    except Exception:
+        return []
 
 
 # ===================================================================

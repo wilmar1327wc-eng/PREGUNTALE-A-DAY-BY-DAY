@@ -1021,6 +1021,51 @@ with st.container(border=True):
 # ===================================================================
 # Resolver la consulta (menú o IA) -> intención
 # ===================================================================
+# --- IA: abrir la ficha de una persona o la tarjeta de un punto detectado ---
+def _abrir_func_ia(fid, nombre, marca, ventana, dom):
+    _mids = marcas.get(marca, [])
+    _logo = LOGOS.get((marca or "").strip().upper())
+    _car = (motor.func_cargos([fid]).get(fid) if hasattr(motor, "func_cargos") else None)
+    _nm = f"{nombre}  —  {_car}" if _car else nombre
+    _render_func_card(_mids, fid, _nm, marca, ventana, _logo, dom)   # hace st.stop()
+
+def _abrir_pdv_ia(pid, nombre, marca, ventana):
+    _mids = marcas.get(marca, [])
+    _logo = LOGOS.get((marca or "").strip().upper())
+    _render_pdv_card(_mids, pid, nombre, marca, ventana, _logo)      # hace st.stop()
+
+def _set_pick(tipo, eid, nombre, marca, ventana, dom):
+    st.session_state["ia_pick"] = {"tipo": tipo, "id": eid, "nombre": nombre,
+                                   "marca": marca, "ventana": ventana, "dom": dom}
+
+def _resolver_ia_entidad(tipo, matches, q, ventana, dom):
+    """0 coincidencias -> aviso; 1 -> abre la ficha; varias -> lista para elegir. Siempre detiene."""
+    if not matches:
+        _quien = "a nadie" if tipo == "func" else "ningún punto"
+        st.markdown(f'<div class="empty">No encontré {_quien} que coincida con '
+                    f'<b>{_html.escape(str(q))}</b>. Revisa el nombre o el ID.</div>',
+                    unsafe_allow_html=True)
+        st.markdown(PIE, unsafe_allow_html=True)
+        st.stop()
+    if len(matches) == 1:
+        eid, nombre, marca = matches[0]
+        if tipo == "func":
+            _abrir_func_ia(eid, nombre, marca, ventana, dom)
+        else:
+            _abrir_pdv_ia(eid, nombre, marca, ventana)
+        st.stop()
+    _qu = "personas" if tipo == "func" else "puntos"
+    st.markdown(f'<div class="entendi"><span class="lbl">Elige</span><span class="pill">'
+                f'{len(matches)} {_qu} coinciden con “{_html.escape(str(q))}”</span></div>',
+                unsafe_allow_html=True)
+    for eid, nombre, marca in matches:
+        st.button(f"{nombre}   ·   {marca}   ·   ID {eid}", use_container_width=True,
+                  key=f"iapick_{tipo}_{eid}_{marca}",
+                  on_click=_set_pick, args=(tipo, eid, nombre, marca, ventana, dom))
+    st.markdown(PIE, unsafe_allow_html=True)
+    st.stop()
+
+
 cons = st.session_state.get("consulta")
 usado = None
 
@@ -1033,6 +1078,15 @@ if not cons:
     )
     st.markdown(PIE, unsafe_allow_html=True)
     st.stop()
+
+# Si el usuario eligió una coincidencia de la lista de la IA, abre su ficha directo.
+_pick = st.session_state.get("ia_pick")
+if _pick:
+    st.session_state["ia_pick"] = None
+    if _pick["tipo"] == "func":
+        _abrir_func_ia(_pick["id"], _pick["nombre"], _pick["marca"], _pick["ventana"], _pick["dom"])
+    else:
+        _abrir_pdv_ia(_pick["id"], _pick["nombre"], _pick["marca"], _pick["ventana"])
 
 if cons["via"] == "ia":
     intp = cons["intp"]
@@ -1048,6 +1102,16 @@ if cons["via"] == "ia":
     dom, metrica, dimension = intp["dominio"], intp["metrica"], intp["dimension"]
     cname, ids, ventana = intp["cliente_nombre"], intp["cliente_ids"], intp["ventana"]
     usado = cons.get("usado")
+    # ¿La pregunta es por UNA persona o UN punto concreto? (puede venir sin marca -> busca en todas)
+    _fs, _ps = intp.get("funcionario"), intp.get("punto")
+    if _fs or _ps:
+        _scope = ids if ids else None   # None => todas las marcas
+        if _fs:
+            _ms = motor.buscar_funcionarios(_fs, _scope) if hasattr(motor, "buscar_funcionarios") else []
+            _resolver_ia_entidad("func", _ms, _fs, ventana, dom)   # siempre detiene
+        else:
+            _ms = motor.buscar_pdvs(_ps, _scope) if hasattr(motor, "buscar_pdvs") else []
+            _resolver_ia_entidad("pdv", _ms, _ps, ventana, dom)    # siempre detiene
     if not ids:
         st.warning("¿De qué marca? Nómbrala en la pregunta, o úsala en el menú de arriba.")
         st.stop()
