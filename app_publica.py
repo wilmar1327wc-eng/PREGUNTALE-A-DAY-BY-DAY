@@ -688,6 +688,11 @@ def _nueva_busqueda():
     st.session_state.form_nonce = _n + 1
     st.session_state.consulta = None
 
+def _limpiar_resultado():
+    # Al cambiar de marca o de indicador, el resultado congelado deja de tener sentido:
+    # lo borramos para que la tarjeta no muestre data que ya no concuerda con los filtros.
+    st.session_state.consulta = None
+
 def c_pdv_lista(marca):
     # Puntos de la marca para el selector. Sin caché: si construyes cubo_pdv después de
     # abrir el app, se recupera solo (no se queda pegado en "vacío").
@@ -906,9 +911,11 @@ with st.container(border=True):
     # Todas arrancan vacías con un texto guía: nada preseleccionado.
     c1, c2, c3, c4 = st.columns([1.3, 1, 1, 1], vertical_alignment="bottom")
     marca_sel = c1.selectbox("Marca / cliente", op_marca, index=None,
-                             placeholder="Selecciona un cliente", key=_wk("m_marca"))
+                             placeholder="Selecciona un cliente", key=_wk("m_marca"),
+                             on_change=_limpiar_resultado)
     ind_sel = c2.selectbox("Indicador", ind_labels, index=None,
-                           placeholder="Selecciona un indicador", key=_wk("m_ind"))
+                           placeholder="Selecciona un indicador", key=_wk("m_ind"),
+                           on_change=_limpiar_resultado)
     per_sel = c3.selectbox(
         "Período", motor.VENTANAS, index=None, placeholder="Selecciona un período", key=_wk("m_per"),
         format_func=lambda k: motor.VENTANA_LABEL.get(k, k).capitalize(),
