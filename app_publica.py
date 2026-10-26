@@ -789,8 +789,9 @@ def c_func_lista(marca):
     except Exception:
         return []
 
-def _render_func_card(ids, fid, nm, marca, ventana, logo):
-    """Ficha de una persona: qué capturó/ingresó en el período (filtro por funcionario)."""
+def _render_func_card(ids, fid, nm, marca, ventana, logo, dom=None):
+    """Ficha de una persona: qué capturó/ingresó en el período (filtro por funcionario).
+    'dom' es el indicador elegido en el menú (para listar los puntos de ESE indicador)."""
     vlabel = motor.VENTANA_LABEL.get(ventana, ventana)
     try:
         est = motor.func_estado(ids, fid, ventana)
@@ -849,6 +850,50 @@ def _render_func_card(ids, fid, nm, marca, ventana, logo):
             ".encd .ec{color:#9DB4DA;font-variant-numeric:tabular-nums}</style>"
             f'<div class="encd"><h4>Encuestas capturadas · {len(enc_det)}</h4><ul>{items}</ul></div>',
             unsafe_allow_html=True)
+    # Detalle: EN QUÉ PUNTOS registró (reverso de 'Funcionarios en este punto')
+    _FUN4 = ("agotados", "precios", "actividades", "ingresos")
+    _dom_pdv = dom if dom in _FUN4 else None
+    _fp = getattr(motor, "func_pdvs", None)
+    pts = _fp(ids, fid, ventana, _dom_pdv) if _fp else None
+    if pts:
+        if _dom_pdv == "ingresos":
+            _tit = "Puntos donde ingresó"
+        elif _dom_pdv:
+            _tit = f"Puntos donde registró {labels.get(_dom_pdv, _dom_pdv)}"
+        else:
+            _tit = "Puntos donde estuvo"
+        def _fn2(x):
+            return f"{int(x):,}".replace(",", ".")
+        def _inds2(csv):
+            return " · ".join(labels.get(t, t.capitalize()) for t in csv.split(",") if t)
+        lis = []
+        for pid_, pnm, nn, bb, inds in pts:
+            if _dom_pdv == "ingresos" and bb:
+                val, sub = f"{nn} de {bb}", "ingresó / programados"
+            elif _dom_pdv:
+                val, sub = _fn2(nn), "capturas"
+            else:
+                val, sub = _fn2(nn), _inds2(inds)
+            lis.append(f'<li><span class="fn">{_html.escape(str(pnm))}'
+                       f'<span class="fid">ID {pid_}</span></span>'
+                       f'<span class="fmeta"><span class="fi">{_html.escape(sub)}</span>'
+                       f'<span class="fc">{_html.escape(val)}</span></span></li>')
+        st.markdown(
+            "<style>.fppts{margin-top:12px;border:1px solid #22406E;border-radius:12px;"
+            "background:#0F2146;padding:10px 14px}.fppts h4{margin:0 0 6px;"
+            "font-family:'Space Grotesk';font-size:1rem;color:#35ECD9}"
+            ".fppts ul{list-style:none;margin:0;padding:0}.fppts li{display:flex;"
+            "justify-content:space-between;align-items:center;gap:12px;padding:6px 0;"
+            "border-top:1px solid #16305A;color:#ECF3FF;font-size:.95rem}"
+            ".fppts li:first-child{border-top:none}.fppts .fid{color:#9DB4DA;font-size:.8rem;"
+            "margin-left:8px}.fppts .fmeta{display:flex;align-items:center;gap:14px}"
+            ".fppts .fi{color:#9DB4DA;font-size:.82rem}.fppts .fc{color:#35ECD9;"
+            "font-variant-numeric:tabular-nums;min-width:56px;text-align:right}</style>"
+            f'<div class="fppts"><h4>{_tit} · {len(pts)}</h4><ul>{"".join(lis)}</ul></div>',
+            unsafe_allow_html=True)
+    elif pts is None and st.session_state.get("auth_user") == "administrador":
+        st.caption("ℹ️ “Puntos donde ingresó/registró” se activa al reconstruir cubo_pdv_func "
+                   "(refrescar_pdvfunc.bat).")
     st.markdown(
         '<div class="pie">Centro de Inteligencia de Negocios de job&amp;talent · '
         'ficha por funcionario; números agregados al último refresco.</div>', unsafe_allow_html=True)
@@ -1041,7 +1086,7 @@ else:
         except Exception:
             _fnm, _fpid = str(_funcsel), None
         if _fpid is not None:
-            _render_func_card(ids, _fpid, _fnm, cname, ventana, logo)   # hace st.stop()
+            _render_func_card(ids, _fpid, _fnm, cname, ventana, logo, dom)   # hace st.stop()
 
     # Si se eligió un punto de venta específico -> SU tarjeta
     _pdvsel = cons.get("pdv")

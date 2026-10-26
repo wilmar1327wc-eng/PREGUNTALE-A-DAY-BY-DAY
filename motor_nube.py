@@ -735,9 +735,42 @@ def pdv_funcionarios(ids, pdv_id, ventana):
         f"SELECT funcionario_id, MAX(funcionario) AS funcionario, SUM(capturas) AS n, "
         f"STRING_AGG(DISTINCT indicador, ',' ORDER BY indicador) AS indicadores "
         f"FROM cubo_pdv_func WHERE cliente_id IN ({idsph}) AND pdv_id = %(pid)s "
-        f"AND mes >= date_trunc('month', {ini}) GROUP BY funcionario_id ORDER BY 3 DESC", binds)
+        f"AND mes >= date_trunc('month', {ini}) GROUP BY funcionario_id "
+        f"HAVING SUM(capturas) > 0 ORDER BY 3 DESC", binds)
     return [(int(r["funcionario_id"]), str(r["funcionario"]), int(r["n"] or 0),
              str(r["indicadores"] or "")) for _, r in df.iterrows()] if not df.empty else []
+
+
+def func_pdvs(ids, func_id, ventana, dom=None):
+    """Puntos de venta donde la persona registró actividad en el período.
+    Si dom es uno de los 4 (agotados/precios/actividades/ingresos), filtra por ese indicador.
+    Para ingresos, 'n' = veces que ingresó (VISITADO) y 'base' = programados.
+    Devuelve [(pdv_id, nombre, n, base, indicadores_csv)], de más a menos."""
+    try:
+        ini = _FECHA.get(ventana, _FECHA["3m"])
+        binds = {"fid": int(func_id)}
+        idsph = _ids_ph(ids, binds)
+        cond = (f"pf.cliente_id IN ({idsph}) AND pf.funcionario_id = %(fid)s "
+                f"AND pf.mes >= date_trunc('month', {ini})")
+        if dom:
+            binds["dom"] = str(dom)
+            cond += " AND pf.indicador = %(dom)s"
+        df = run_df(
+            f"SELECT pf.pdv_id, MAX(p.pdv) AS pdv, SUM(pf.capturas) AS n, SUM(pf.base) AS base, "
+            f"STRING_AGG(DISTINCT pf.indicador, ',' ORDER BY pf.indicador) AS inds "
+            f"FROM cubo_pdv_func pf "
+            f"LEFT JOIN (SELECT pdv_id, MAX(pdv) AS pdv FROM cubo_pdv GROUP BY pdv_id) p "
+            f"ON p.pdv_id = pf.pdv_id "
+            f"WHERE {cond} GROUP BY pf.pdv_id HAVING SUM(pf.capturas) > 0 ORDER BY 3 DESC", binds)
+        out = []
+        for _, r in df.iterrows():
+            b = r["base"]
+            out.append((int(r["pdv_id"]),
+                        str(r["pdv"]) if r["pdv"] is not None else f"ID {int(r['pdv_id'])}",
+                        int(r["n"] or 0), (int(b) if b is not None else None), str(r["inds"] or "")))
+        return out
+    except Exception:
+        return None   # la tabla aún no tiene la columna/datos nuevos (falta reconstruir)
 
 
 def func_cargos(func_ids):
