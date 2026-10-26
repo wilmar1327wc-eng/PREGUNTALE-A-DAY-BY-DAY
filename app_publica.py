@@ -748,9 +748,11 @@ def _render_pdv_card(ids, pid, nm, marca, ventana, logo):
             return f"{int(x):,}".replace(",", ".")
         def _inds(csv):
             return " · ".join(_lab.get(t, t.capitalize()) for t in csv.split(",") if t)
+        _fcar_pdv = motor.func_cargos([r[0] for r in fn]) if hasattr(motor, "func_cargos") else {}
         items = "".join(
             f'<li><span class="fn">{_html.escape(str(nm2))}'
-            f'<span class="fid">ID {fid2}</span></span>'
+            + (f'<span class="fcar">{_html.escape(_fcar_pdv[fid2])}</span>' if _fcar_pdv.get(fid2) else '')
+            + f'<span class="fid">ID {fid2}</span></span>'
             f'<span class="fmeta"><span class="fi">{_html.escape(_inds(inds))}</span>'
             f'<span class="fc">{_fmtn(n2)}</span></span></li>'
             for fid2, nm2, n2, inds in fn)
@@ -761,7 +763,8 @@ def _render_pdv_card(ids, pid, nm, marca, ventana, logo):
             ".fnpdv ul{list-style:none;margin:0;padding:0}.fnpdv li{display:flex;"
             "justify-content:space-between;align-items:center;gap:12px;padding:6px 0;"
             "border-top:1px solid #16305A;color:#ECF3FF;font-size:.95rem}"
-            ".fnpdv li:first-child{border-top:none}.fnpdv .fid{color:#9DB4DA;font-size:.8rem;"
+            ".fnpdv li:first-child{border-top:none}.fnpdv .fcar{color:#35ECD9;font-size:.78rem;"
+            "margin-left:8px}.fnpdv .fid{color:#9DB4DA;font-size:.8rem;"
             "margin-left:8px}.fnpdv .fmeta{display:flex;align-items:center;gap:14px}"
             ".fnpdv .fi{color:#9DB4DA;font-size:.82rem}.fnpdv .fc{color:#35ECD9;"
             "font-variant-numeric:tabular-nums;min-width:50px;text-align:right}</style>"
@@ -945,7 +948,10 @@ with st.container(border=True):
                            disabled=not _tiene_marca,
                            help="Haz clic y escribe para buscar por nombre o ID.")
     _funcs = c_func_lista(marca_sel) if _tiene_marca else []
-    _func_opts = ["(Todos los funcionarios)"] + [f"{nm}  ·  ID {fid}" for fid, nm in _funcs]
+    _fcar = motor.func_cargos([f for f, _ in _funcs]) if (_funcs and hasattr(motor, "func_cargos")) else {}
+    _func_opts = ["(Todos los funcionarios)"] + [
+        (f"{nm}  —  {_fcar[fid]}  ·  ID {fid}" if _fcar.get(fid) else f"{nm}  ·  ID {fid}")
+        for fid, nm in _funcs]
     if st.session_state.get(_wk("m_func")) not in _func_opts:
         st.session_state.pop(_wk("m_func"), None)   # limpia si cambió la marca
     func_sel = d2.selectbox("Funcionario", _func_opts, index=None,

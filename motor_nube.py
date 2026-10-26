@@ -740,6 +740,25 @@ def pdv_funcionarios(ids, pdv_id, ventana):
              str(r["indicadores"] or "")) for _, r in df.iterrows()] if not df.empty else []
 
 
+def func_cargos(func_ids):
+    """{funcionario_id: cargo} para la lista de ids dada (lee cubo_cargos).
+    Robusto: devuelve {} si la tabla no existe o no hay ids (no rompe la app)."""
+    try:
+        ids = [int(x) for x in (func_ids or [])]
+        if not ids:
+            return {}
+        binds = {}
+        ph = _ids_ph(ids, binds)   # reutiliza el placeholder seguro de cliente_id
+        df = run_df(f"SELECT funcionario_id, cargo FROM cubo_cargos "
+                    f"WHERE funcionario_id IN ({ph})", binds)
+        if df.empty:
+            return {}
+        return {int(r["funcionario_id"]): str(r["cargo"]) for _, r in df.iterrows()
+                if r["cargo"] is not None and str(r["cargo"]).strip()}
+    except Exception:
+        return {}
+
+
 # ===================================================================
 # LOG DE ACTIVIDAD (quién entra y qué consulta) — tabla log_actividad en Neon.
 # No guarda datos personales: solo el usuario de la app (marca/administrador) y la acción.
