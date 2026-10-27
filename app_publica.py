@@ -1195,7 +1195,9 @@ def _render_resumen_cuenta(marca):
     for _nom, _v, _vt, _vc in _filas:
         _tiles += (f'<div class="tile"><div class="tl">{_nom}</div><div class="tv2">{_v}</div>'
                    f'<div class="tvar {_vc}">{_vt} <span class="vs">vs. anterior</span></div></div>')
-    st.markdown(f'<div class="kpis">{_tiles}</div>', unsafe_allow_html=True)
+    st.markdown("<style>.kpis5{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;"
+                "margin:18px 0 6px}@media(max-width:820px){.kpis5{grid-template-columns:1fr 1fr}}</style>"
+                f'<div class="kpis5">{_tiles}</div>', unsafe_allow_html=True)
     _rc = None
     if hasattr(motor, "resumen_cuenta"):
         try:
