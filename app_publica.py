@@ -529,6 +529,147 @@ def fmt_c(v, f):
     except Exception:
         return fmt(v, f)
 
+# ===================================================================
+# ALERTAS INTELIGENTES — qué se salió de lo normal en la cuenta.
+# Detección en la app (reusa dirección/formato); la IA solo redacta.
+# ===================================================================
+_ALERT_CLAVES = [("agotados", "pct_agotado"), ("cobertura", "pct_cobertura"),
+                 ("ingresos", "pct_asistencia"), ("precios", "precio_promedio"),
+                 ("ventas", "venta_total")]
+
+def _detectar_alertas(ids, ventana="semana"):
+    """Hallazgos de desviación: movimiento vs período anterior + segmento atípico vs la cuenta."""
+    hall = []
+    for dom, met in _ALERT_CLAVES:
+        try:
+            valor, base, mkey, m, _ = motor.kpi(dom, ids, ventana, met)
+        except Exception:
+            continue
+        if not base or mkey in _SIN_JUICIO:
+            continue
+        alto_malo = mkey in _PEOR_SI_SUBE
+        # 1) Movimiento fuerte vs el período anterior
+        try:
+            var = motor.kpi_var(dom, ids, ventana, met).get("var")
+        except Exception:
+            var = None
+        if var is not None:
+            mag = abs(float(var))
+            if mag >= 0.12:
+                subio = var > 0
+                malo = (subio and alto_malo) or ((not subio) and (not alto_malo))
+                nivel = ("alta" if mag >= 0.25 else "media") if malo else "buena"
+                hall.append({"tipo": "movimiento", "nivel": nivel, "orden": float(mag),
+                             "indicador": motor.DOMINIOS[dom]["nombre"], "metrica": m["label"],
+                             "valor_actual": fmt(valor, m["fmt"]),
+                             "cambio": f"{var * 100:+.0f}%".replace("+", "+").replace("-", "−"),
+                             "subio": bool(subio), "es_malo": bool(malo)})
+        # 2) Segmento atípico vs el promedio de la cuenta
+        try:
+            dfg, dkey, _m2, _ = motor.por_dimension(dom, ids, ventana, met,
+                                                    motor.DOMINIOS[dom]["dimension_default"])
+        except Exception:
+            dfg = None
+        if dfg is not None and not dfg.empty and valor:
+            r = dfg.iloc[0] if alto_malo else dfg.iloc[-1]
+            try:
+                vseg, vcta = float(r["VALOR"]), float(valor)
+                dev = (vseg - vcta) / abs(vcta) if alto_malo else (vcta - vseg) / abs(vcta)
+            except Exception:
+                dev = 0
+            if dev >= 0.40 and int(r.get("BASE", 0) or 0) >= 10:
+                hall.append({"tipo": "segmento", "nivel": ("alta" if dev >= 0.80 else "media"),
+                             "orden": float(dev), "indicador": motor.DOMINIOS[dom]["nombre"],
+                             "metrica": m["label"], "por": DIM_LABEL.get(dkey, dkey),
+                             "segmento": str(r["DIMENSION"]), "valor_segmento": fmt(r["VALOR"], m["fmt"]),
+                             "valor_cuenta": fmt(valor, m["fmt"]), "es_malo": True})
+    _ord = {"alta": 0, "media": 1, "buena": 2}
+    hall.sort(key=lambda x: (_ord.get(x["nivel"], 3), -x["orden"]))
+    return hall[:5]
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _alertas(firma, _marca, _ids):
+    # Cacheado por (marca, fecha de datos): se recalcula solo cuando cambia el refresco.
+    hall = _detectar_alertas(_ids)
+    red = None
+    if hall and hasattr(motor, "alertas_redactar"):
+        try:
+            red = motor.alertas_redactar({"cliente": _marca, "alertas": hall})
+        except Exception:
+            red = None
+    return {"hall": hall, "red": red}
+
+def _render_alertas(marca):
+    _ids = marcas.get(marca, [])
+    if not _ids:
+        return
+    try:
+        _fz = motor.freshness()
+    except Exception:
+        _fz = ""
+    try:
+        with st.spinner("Revisando alertas de tu cuenta…"):
+            _res = _alertas((marca, str(_fz)), marca, _ids)
+    except Exception:
+        return
+    _hall = _res.get("hall") or []
+    _red = _res.get("red") or []
+    _SEVLBL = {"alta": "● Alta", "media": "● Media", "buena": "● Buena noticia"}
+    st.markdown(_ALERT_CSS, unsafe_allow_html=True)
+    if not _hall:
+        st.markdown('<div class="alrtbox"><div class="ahead"><span class="pt">🔔 Alertas de tu cuenta</span>'
+                    '<span class="badge ok">Todo en orden</span></div>'
+                    '<div class="alrt buena"><p class="ad">Sin desviaciones relevantes esta semana. '
+                    'Buen momento para sostener el ritmo. ✅</p></div></div>', unsafe_allow_html=True)
+        return
+    _items = ""
+    for _i, _h in enumerate(_hall):
+        _r = _red[_i] if _i < len(_red) else None
+        if _r and (_r.get("titulo") or _r.get("texto")):
+            _tit, _txt, _acc = _r.get("titulo", ""), _r.get("texto", ""), _r.get("accion", "")
+        else:
+            # Fallback sin IA: texto armado con los números.
+            if _h["tipo"] == "movimiento":
+                _tit = f'{"📈" if _h["subio"] else "📉"} {_h["indicador"]} {"subió" if _h["subio"] else "bajó"}'
+                _txt = f'{_h["metrica"]} de la cuenta en {_h["valor_actual"]} ({_h["cambio"]} vs. el período anterior).'
+            else:
+                _tit = f'🔎 {_h["segmento"]} se salió del promedio'
+                _txt = (f'{_h["metrica"]} en {_h["segmento"]} está en {_h["valor_segmento"]} '
+                        f'(cuenta: {_h["valor_cuenta"]}).')
+            _acc = ""
+        _nv = _h["nivel"]
+        _accd = f'<div class="aa">→ {_html.escape(_acc)}</div>' if _acc else ""
+        _items += (f'<div class="alrt {_nv}"><div class="top"><span class="at">{_html.escape(_tit)}</span>'
+                   f'<span class="sev">{_SEVLBL.get(_nv, "")}</span></div>'
+                   f'<p class="ad">{_html.escape(_txt)}</p>{_accd}</div>')
+    _n = len(_hall)
+    st.markdown(f'<div class="alrtbox"><div class="ahead"><span class="pt">🔔 Alertas de tu cuenta</span>'
+                f'<span class="badge">{_n} para mirar</span></div>'
+                f'<div class="asub">{_html.escape(str(marca))} · esto es lo que se salió de lo normal:</div>'
+                f'{_items}'
+                '<div class="afoot">Se recalculan en cada refresco · solo cifras agregadas.</div></div>',
+                unsafe_allow_html=True)
+
+_ALERT_CSS = (
+    "<style>.alrtbox{margin:2px 0 18px}"
+    ".alrtbox .ahead{display:flex;align-items:center;gap:12px;margin:2px 0 4px}"
+    ".alrtbox .ahead .pt{font-family:'Space Grotesk';font-size:1.45rem;font-weight:700;color:#fff}"
+    ".alrtbox .badge{background:rgba(255,148,120,.16);color:#FF9478;border:1px solid rgba(255,148,120,.45);"
+    "font-weight:700;font-size:.8rem;border-radius:999px;padding:3px 11px}"
+    ".alrtbox .badge.ok{background:rgba(53,236,217,.14);color:#35ECD9;border-color:rgba(53,236,217,.4)}"
+    ".alrtbox .asub{color:#9DB4DA;font-size:.9rem;margin:0 0 12px}"
+    ".alrt{border:1px solid #22406E;border-left:4px solid #22406E;border-radius:12px;background:#0F2146;"
+    "padding:12px 16px;margin-bottom:10px}"
+    ".alrt.alta{border-left-color:#FF9478}.alrt.media{border-left-color:#F2C94C}.alrt.buena{border-left-color:#35ECD9}"
+    ".alrt .top{display:flex;justify-content:space-between;align-items:baseline;gap:10px}"
+    ".alrt .at{font-family:'Space Grotesk';font-weight:700;color:#fff;font-size:1.02rem}"
+    ".alrt .sev{font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;font-weight:700;white-space:nowrap}"
+    ".alrt.alta .sev{color:#FF9478}.alrt.media .sev{color:#F2C94C}.alrt.buena .sev{color:#35ECD9}"
+    ".alrt .ad{color:#ECF3FF;font-size:.95rem;line-height:1.5;margin:5px 0 0}"
+    ".alrt .aa{color:#35ECD9;font-size:.86rem;margin-top:7px}"
+    ".alrtbox .afoot{color:#9DB4DA;font-size:.78rem;margin-top:6px}</style>"
+)
+
 def _plural(w):
     """Plural en español sencillo: regional->regionales, cadena->cadenas, zona->zonas."""
     w = str(w)
@@ -1225,6 +1366,16 @@ usado = None
 
 # Página limpia: sin respuesta hasta que el usuario pida algo.
 if not cons:
+    # Alertas al entrar: para la marca del usuario (o la elegida, si es administrador).
+    _mk_al = _marca_de_usuario(st.session_state.get("auth_user"), marcas)
+    if not _mk_al:
+        _sel_al = st.session_state.get(_wk("m_marca"))
+        _mk_al = _sel_al if (_sel_al and _sel_al in marcas) else None
+    if _mk_al and hasattr(motor, "alertas_redactar"):
+        try:
+            _render_alertas(_mk_al)
+        except Exception:
+            pass
     st.markdown(
         '<div class="empty">Elige <b>marca</b>, <b>indicador</b> y <b>período</b>, y pulsa '
         '<b>Consultar</b>. O escríbeme una pregunta y dale <b>Preguntar con IA</b>.</div>',

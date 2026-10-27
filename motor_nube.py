@@ -465,6 +465,53 @@ def resumen_cuenta(contexto):
         return None
 
 
+def _alertas_prompt(ctx):
+    return (
+        "Eres analista senior de trade marketing en Colombia. Recibes una lista de "
+        "'hallazgos' ya detectados (desviaciones de una cuenta). Con EXCLUSIVAMENTE esos "
+        "datos (NO inventes cifras ni causas), redacta UNA alerta por cada hallazgo, EN EL "
+        "MISMO ORDEN y la misma cantidad. Cada alerta:\n"
+        "- titulo: 4 a 7 palabras, puede empezar con un emoji (📈 sube / 📉 baja / ✅ buena / 🔎).\n"
+        "- texto: 1 frase con el número y el contexto del hallazgo.\n"
+        "- accion: 1 frase corta y accionable (empieza con un verbo). Si es buena noticia, "
+        "sugiere cómo capitalizarla.\n"
+        "Español de Colombia, ejecutivo y directo. Responde SOLO JSON con esta forma: "
+        '{"alertas": [{"titulo": "...", "texto": "...", "accion": "..."}, ...]}.\n\n'
+        f"Hallazgos: {json.dumps(ctx, ensure_ascii=False)}"
+    )
+
+
+def alertas_redactar(contexto):
+    """Redacta en lenguaje natural una lista de hallazgos. None si no hay IA."""
+    prompt = _alertas_prompt(contexto)
+    raw = None
+    gk = os.environ.get("GROQ_API_KEY")
+    if gk:
+        try:
+            raw = _groq_texto(prompt, gk)
+        except Exception:
+            raw = None
+    if raw is None:
+        gem = api_key()
+        if gem:
+            try:
+                raw = _gemini_texto(prompt, gem)
+            except Exception:
+                raw = None
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+        out = []
+        for a in (data.get("alertas") or []):
+            out.append({"titulo": str(a.get("titulo") or "").strip(),
+                        "texto": str(a.get("texto") or "").strip(),
+                        "accion": str(a.get("accion") or "").strip()})
+        return out or None
+    except Exception:
+        return None
+
+
 # ===================================================================
 # CONSULTA DEL CUBO + RECOMPOSICIÓN DE MÉTRICAS
 # ===================================================================
