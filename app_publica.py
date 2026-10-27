@@ -345,6 +345,30 @@ _IA_CSS = (
     ".iaread ul.iarec li{color:#ECF3FF;font-size:.96rem;line-height:1.5;margin:3px 0}</style>"
 )
 
+@st.cache_data(ttl=1800, show_spinner=False)
+def _resumen_ia(firma, _ctx):
+    return motor.resumen_cuenta(_ctx) if hasattr(motor, "resumen_cuenta") else None
+
+def _norm(s):
+    return "".join(c for c in str(s).lower() if c.isalnum())
+
+# Usuarios cuyo nombre no coincide con el de la marca; el resto se resuelve por nombre.
+_USER_ALIAS = {"mistery": "Mystery Shopper", "habicicletas": "HA Bicicletas",
+               "blackdecker": "Black & Decker"}
+
+def _marca_de_usuario(user, marcas):
+    """Marca asociada al usuario logueado (p. ej. 'solla' -> 'Solla'). None si no aplica (admin)."""
+    if not user:
+        return None
+    al = _USER_ALIAS.get(user)
+    if al and al in marcas:
+        return al
+    nu = _norm(user)
+    for mk in marcas:
+        if _norm(mk) == nu:
+            return mk
+    return None
+
 # ===================================================================
 # LOGIN (portada) — toda la app queda detrás de usuario + clave
 # ===================================================================
@@ -699,6 +723,18 @@ def _chip_ia(texto):
     st.session_state[_wk("m_free")] = texto
     do_ia()
 
+def _ver_resumen():
+    # Resumen ejecutivo de la cuenta del usuario (o de la marca elegida, si es administrador).
+    _mk = _marca_de_usuario(st.session_state.get("auth_user"), marcas)
+    if not _mk:
+        _sel = st.session_state.get(_wk("m_marca"))
+        _mk = _sel if (_sel and _sel in marcas) else None
+    st.session_state.consulta = {"via": "resumen", "marca": _mk}
+    try:
+        motor.log_evento(st.session_state.get("auth_user"), "resumen", _mk or "")
+    except Exception:
+        pass
+
 def _nueva_busqueda():
     # Reset infalible: borra las llaves actuales y sube el sufijo -> los widgets se
     # recrean vacíos (placeholder). Funciona en cualquier versión de Streamlit.
@@ -969,6 +1005,11 @@ def _render_func_roster(ids, marca, ventana, logo):
 op_marca = list(marcas.keys()) + ["Todas las marcas"]
 ind_labels = list(PRESET_METRICAS.keys())
 
+# Resumen ejecutivo de la cuenta (un clic) — arriba de la consulta
+_rz1, _rz2 = st.columns([0.42, 0.58])
+_rz1.button("📋  Resumen de mi cuenta", on_click=_ver_resumen, use_container_width=True,
+            help="Un vistazo ejecutivo de tus indicadores clave del mes, con lectura y recomendaciones de la IA.")
+
 with st.container(border=True):
     st.markdown(
         '<div class="eye"><span class="d"></span><b>Consulta rápida</b>'
@@ -1104,6 +1145,79 @@ def _resolver_ia_entidad(tipo, matches, q, ventana, dom):
     st.stop()
 
 
+def _render_resumen_cuenta(marca):
+    """Resumen ejecutivo de una cuenta: indicadores clave del mes + brief de la IA. Detiene."""
+    if not marca or marca not in marcas:
+        st.markdown('<div class="empty">Elige una <b>marca</b> en el menú y vuelve a pedir el '
+                    '<b>Resumen de mi cuenta</b>.</div>', unsafe_allow_html=True)
+        st.markdown(PIE, unsafe_allow_html=True)
+        st.stop()
+    _ids = marcas.get(marca, [])
+    _logo = LOGOS.get((marca or "").strip().upper())
+    _ven = "mes"
+    _vl = motor.VENTANA_LABEL.get(_ven, _ven)
+    _claves = [("agotados", "pct_agotado"), ("cobertura", "pct_cobertura"),
+               ("ingresos", "pct_asistencia"), ("ventas", "venta_total"),
+               ("actividades", "num_actividades")]
+    _filas, _ind_ctx = [], []
+    for _dm, _mt in _claves:
+        try:
+            _val, _bas, _mk, _m, _ = motor.kpi(_dm, _ids, _ven, _mt)
+        except Exception:
+            continue
+        _var = None
+        try:
+            _var = motor.kpi_var(_dm, _ids, _ven, _mt).get("var")
+        except Exception:
+            _var = None
+        try:
+            _vt, _vs = motor.fmt_var(_var)
+        except Exception:
+            _vt, _vs = "—", "flat"
+        _vc = "flat"
+        if _vs != "flat" and _mk not in _SIN_JUICIO:
+            _vc = "good" if ((_vs == "up") != (_mk in _PEOR_SI_SUBE)) else "bad"
+        _filas.append((motor.DOMINIOS[_dm]["nombre"], fmt_c(_val, _m["fmt"]), _vt, _vc))
+        _ind_ctx.append({"indicador": motor.DOMINIOS[_dm]["nombre"], "metrica": _m["label"],
+                         "valor": fmt(_val, _m["fmt"]), "variacion": (_vt if _vt not in ("—", "") else None),
+                         "direccion": _vc, "alto_es_malo": bool(_mk in _PEOR_SI_SUBE)})
+    if _logo:
+        st.markdown(f'<span class="membrete"><img src="{_logo}"></span>', unsafe_allow_html=True)
+    st.markdown(f'<div class="pdvhead"><div class="pt">📋 Resumen de {_html.escape(str(marca))}</div>'
+                f'<div class="ps">{_vl} · indicadores clave de la cuenta</div></div>',
+                unsafe_allow_html=True)
+    if not _filas:
+        st.markdown('<div class="lectura">No hay datos de esta cuenta en el período.</div>',
+                    unsafe_allow_html=True)
+        st.markdown(PIE, unsafe_allow_html=True)
+        st.stop()
+    _tiles = ""
+    for _nom, _v, _vt, _vc in _filas:
+        _tiles += (f'<div class="tile"><div class="tl">{_nom}</div><div class="tv2">{_v}</div>'
+                   f'<div class="tvar {_vc}">{_vt} <span class="vs">vs. anterior</span></div></div>')
+    st.markdown(f'<div class="kpis">{_tiles}</div>', unsafe_allow_html=True)
+    _rc = None
+    if hasattr(motor, "resumen_cuenta"):
+        try:
+            _firma = (marca, _ven, tuple((c["indicador"], c["valor"], c["variacion"]) for c in _ind_ctx))
+            with st.spinner("Preparando tu resumen…"):
+                _rc = _resumen_ia(_firma, {"cliente": marca, "periodo": _vl, "indicadores": _ind_ctx})
+        except Exception:
+            _rc = None
+    if _rc and (_rc.get("resumen") or _rc.get("recomendaciones")):
+        _recs = "".join(f"<li>{_html.escape(r)}</li>" for r in _rc.get("recomendaciones", []))
+        _rh = f'<div class="iarec-h">Prioridades</div><ul class="iarec">{_recs}</ul>' if _recs else ""
+        _rs = _html.escape(_rc.get("resumen", ""))
+        _body = (f'<p class="ialec">{_rs}</p>' if _rs else "") + _rh
+        st.markdown(_IA_CSS + f'<div class="iaread"><div class="iah">🧠 Resumen del analista IA</div>'
+                    f'{_body}</div>', unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="lectura">El resumen de IA no está disponible ahora; '
+                    'revisa los indicadores de arriba.</div>', unsafe_allow_html=True)
+    st.markdown(PIE, unsafe_allow_html=True)
+    st.stop()
+
+
 cons = st.session_state.get("consulta")
 usado = None
 
@@ -1125,6 +1239,10 @@ if _pick:
         _abrir_func_ia(_pick["id"], _pick["nombre"], _pick["marca"], _pick["ventana"], _pick["dom"])
     else:
         _abrir_pdv_ia(_pick["id"], _pick["nombre"], _pick["marca"], _pick["ventana"])
+
+# Resumen ejecutivo de la cuenta (botón "Resumen de mi cuenta")
+if cons.get("via") == "resumen":
+    _render_resumen_cuenta(cons.get("marca"))   # hace st.stop()
 
 if cons["via"] == "ia":
     intp = cons["intp"]

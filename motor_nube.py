@@ -419,6 +419,52 @@ def narrar(contexto):
         return None
 
 
+def _resumen_prompt(ctx):
+    return (
+        "Eres analista senior de trade marketing en Colombia, preparándole a un KAM el resumen "
+        "ejecutivo del estado de su cuenta. Con EXCLUSIVAMENTE los indicadores de este JSON "
+        "(NO inventes cifras ni causas), redacta:\n"
+        "- resumen: 3 a 4 frases que integren el panorama general — qué está bien, qué está "
+        "en alerta y la tendencia vs el período anterior. Directo y ejecutivo, sin saludos.\n"
+        "- recomendaciones: 3 acciones PRIORIZADAS (la más urgente primero), cada una "
+        "empezando con un verbo. Para cada indicador, si 'alto_es_malo' es true apunta a "
+        "bajarlo; si es false, a subirlo o sostenerlo.\n"
+        "Español de Colombia, tono ejecutivo. Responde SOLO JSON con esta forma: "
+        '{"resumen": "...", "recomendaciones": ["...", "...", "..."]}.\n\n'
+        f"Datos: {json.dumps(ctx, ensure_ascii=False)}"
+    )
+
+
+def resumen_cuenta(contexto):
+    """Brief ejecutivo multi-indicador de una cuenta. None si no hay IA disponible."""
+    prompt = _resumen_prompt(contexto)
+    raw = None
+    gk = os.environ.get("GROQ_API_KEY")
+    if gk:
+        try:
+            raw = _groq_texto(prompt, gk)
+        except Exception:
+            raw = None
+    if raw is None:
+        gem = api_key()
+        if gem:
+            try:
+                raw = _gemini_texto(prompt, gem)
+            except Exception:
+                raw = None
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+        res = str(data.get("resumen") or "").strip()
+        recs = [str(r).strip() for r in (data.get("recomendaciones") or []) if str(r).strip()][:4]
+        if not res and not recs:
+            return None
+        return {"resumen": res, "recomendaciones": recs}
+    except Exception:
+        return None
+
+
 # ===================================================================
 # CONSULTA DEL CUBO + RECOMPOSICIÓN DE MÉTRICAS
 # ===================================================================
