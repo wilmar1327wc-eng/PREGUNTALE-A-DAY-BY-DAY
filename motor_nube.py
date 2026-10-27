@@ -341,6 +341,85 @@ def interpretar(pregunta, marcas):
 
 
 # ===================================================================
+# LECTURA EJECUTIVA + RECOMENDACIONES (la IA interpreta los números ya calculados)
+# Solo recibe cifras AGREGADAS (no datos personales). Devuelve {lectura, recomendaciones}
+# o None si no hay IA disponible (la app cae a los insights templados).
+# ===================================================================
+def _narrar_prompt(ctx):
+    return (
+        "Eres analista senior de trade marketing en Colombia, hablándole a un KAM. "
+        "Con EXCLUSIVAMENTE los datos de este JSON (NO inventes cifras, nombres ni causas que "
+        "no estén), redacta:\n"
+        "- lectura: 2 a 3 frases ejecutivas, claras y directas, que resuman el nivel del "
+        "indicador y su tendencia vs el período anterior. Sin relleno ni saludos.\n"
+        "- recomendaciones: 2 a 3 acciones concretas y accionables (empieza cada una con un "
+        "verbo). Si 'valor_alto_es_malo' es true, enfócalas en bajar el indicador; si es false, "
+        "en subirlo o sostenerlo. Menciona los segmentos puntuales cuando ayude.\n"
+        "Español de Colombia, tono ejecutivo. Responde SOLO JSON con esta forma: "
+        '{"lectura": "...", "recomendaciones": ["...", "..."]}.\n\n'
+        f"Datos: {json.dumps(ctx, ensure_ascii=False)}"
+    )
+
+
+def _groq_texto(prompt, key, temp=0.3):
+    from groq import Groq
+    client = Groq(api_key=key)
+    candidatos = MODELOS_GROQ
+    if _GROQ_OK["modelo"] in MODELOS_GROQ:
+        candidatos = [_GROQ_OK["modelo"]] + [m for m in MODELOS_GROQ if m != _GROQ_OK["modelo"]]
+    ultimo = None
+    for modelo in candidatos:
+        try:
+            resp = client.chat.completions.create(
+                model=modelo, messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"}, temperature=temp)
+            _GROQ_OK["modelo"] = modelo
+            return resp.choices[0].message.content
+        except Exception as e:
+            ultimo = e
+    raise ultimo
+
+
+def _gemini_texto(prompt, key, temp=0.3):
+    import google.generativeai as genai
+    genai.configure(api_key=key)
+    model = genai.GenerativeModel(MODELO_GEMINI)
+    resp = model.generate_content(
+        prompt, generation_config={"response_mime_type": "application/json", "temperature": temp})
+    return resp.text
+
+
+def narrar(contexto):
+    """Lectura ejecutiva + recomendaciones desde cifras agregadas. None si no hay IA."""
+    prompt = _narrar_prompt(contexto)
+    raw = None
+    gk = os.environ.get("GROQ_API_KEY")
+    if gk:
+        try:
+            raw = _groq_texto(prompt, gk)
+        except Exception:
+            raw = None
+    if raw is None:
+        gem = api_key()
+        if gem:
+            try:
+                raw = _gemini_texto(prompt, gem)
+            except Exception:
+                raw = None
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+        lec = str(data.get("lectura") or "").strip()
+        recs = [str(r).strip() for r in (data.get("recomendaciones") or []) if str(r).strip()][:3]
+        if not lec and not recs:
+            return None
+        return {"lectura": lec, "recomendaciones": recs}
+    except Exception:
+        return None
+
+
+# ===================================================================
 # CONSULTA DEL CUBO + RECOMPOSICIÓN DE MÉTRICAS
 # ===================================================================
 def _metrica(dom, metrica):

@@ -330,6 +330,21 @@ def _xlsx_bytes(firma, _indicador, _cliente, _periodo, _metrica_label, _fmt_m, _
         filas=list(_filas), dim_label=_dim_label, serie=list(_serie),
         insights=list(_insights), fecha_txt=_fecha)
 
+@st.cache_data(ttl=1800, show_spinner=False)
+def _narrativa(firma, _ctx):
+    # Lectura ejecutiva + recomendaciones (IA). Cacheada por 'firma' para no repetir llamadas.
+    return motor.narrar(_ctx) if hasattr(motor, "narrar") else None
+
+_IA_CSS = (
+    "<style>.iaread{margin:16px 0 2px;border:1px solid #22406E;border-left:3px solid #35ECD9;"
+    "border-radius:12px;background:#0F2146;padding:14px 18px}"
+    ".iaread .iah{font-family:'Space Grotesk';font-weight:700;color:#35ECD9;font-size:1rem;"
+    "margin-bottom:6px}.iaread .ialec{color:#ECF3FF;font-size:1rem;line-height:1.55;margin:0}"
+    ".iaread .iarec-h{color:#9DB4DA;font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;"
+    "margin:12px 0 4px}.iaread ul.iarec{margin:0;padding-left:18px}"
+    ".iaread ul.iarec li{color:#ECF3FF;font-size:.96rem;line-height:1.5;margin:3px 0}</style>"
+)
+
 # ===================================================================
 # LOGIN (portada) — toda la app queda detrás de usuario + clave
 # ===================================================================
@@ -679,6 +694,11 @@ def do_ia():
     except Exception:
         pass
 
+def _chip_ia(texto):
+    # Una pregunta sugerida: la pone en la caja y la lanza como si la hubieras escrito.
+    st.session_state[_wk("m_free")] = texto
+    do_ia()
+
 def _nueva_busqueda():
     # Reset infalible: borra las llaves actuales y sube el sufijo -> los widgets se
     # recrean vacíos (placeholder). Funciona en cualquier versión de Streamlit.
@@ -1017,6 +1037,24 @@ with st.container(border=True):
     )
     f2.button("Preguntar con IA", type="secondary", on_click=do_ia)
 
+    # Preguntas sugeridas (un clic). Se adaptan a la marca elegida si hay una.
+    _mkc = st.session_state.get(_wk("m_marca"))
+    _mkc = _mkc if (_mkc and _mkc != "Todas las marcas") else None
+    if _mkc:
+        _sugs = [f"% de agotados de {_mkc} por cadena este mes",
+                 f"Cobertura de {_mkc} por regional",
+                 f"Ventas de {_mkc} por categoría este mes"]
+    else:
+        _sugs = ["% de agotados de Derco por cadena este mes",
+                 "Cobertura de Henkel por regional",
+                 "Ventas de Solla por categoría este mes"]
+    st.markdown('<div style="color:#9DB4DA;font-size:.82rem;margin:10px 0 2px">Prueba con:</div>',
+                unsafe_allow_html=True)
+    _sc = st.columns(len(_sugs))
+    for _i, _sq in enumerate(_sugs):
+        _sc[_i].button("💬  " + _sq, key=f"sug_{_i}", on_click=_chip_ia, args=(_sq,),
+                       use_container_width=True)
+
 
 # ===================================================================
 # Resolver la consulta (menú o IA) -> intención
@@ -1245,6 +1283,54 @@ st.markdown(
     f'</div>',
     unsafe_allow_html=True,
 )
+
+# --- Lectura ejecutiva + recomendaciones (IA sobre los números) ---
+# Auto si la consulta vino por IA; por menú (instantáneo) va bajo demanda, para no gastar IA.
+_firma_m = (dom, tuple(ids), ventana, metrica, dimension, cname)
+_do_narr = bool(usado) or st.session_state.get("pedir_lectura") == _firma_m
+if not _do_narr:
+    if st.button("🧠  Pedir lectura del analista IA", key="btn_lectura",
+                 help="La IA interpreta estos números y sugiere acciones concretas."):
+        st.session_state["pedir_lectura"] = _firma_m
+        _do_narr = True
+if _do_narr:
+    _ctx = {
+        "indicador": meta["nombre"], "metrica": m["label"], "cliente": cname,
+        "periodo": vlabel, "valor": fmt(valor, m["fmt"]), "registros_base": int(base),
+        "variacion_vs_anterior": (_vtxt if _vtxt not in ("—", "") else None),
+        "direccion_variacion": _vcls,                       # good / bad / flat
+        "desglose_por": dim_label, "total_segmentos": int(n_dim),
+        "valor_alto_es_malo": bool(mkey in _PEOR_SI_SUBE),
+        "mas_altos": [{"nombre": str(r["DIMENSION"]), "valor": fmt(r["VALOR"], m["fmt"])}
+                      for _, r in dfg.head(3).iterrows()],
+        "mas_bajos": [{"nombre": str(r["DIMENSION"]), "valor": fmt(r["VALOR"], m["fmt"])}
+                      for _, r in dfg.tail(3).iterrows()],
+    }
+    try:
+        _firma_n = (dom, tuple(ids), ventana, metrica, dimension, cname,
+                    round(float(valor), 4), round(float(var or 0), 5), int(n_dim))
+        with st.spinner("Analizando…"):
+            _nar = _narrativa(_firma_n, _ctx)
+    except Exception:
+        _nar = None
+    if _nar and (_nar.get("lectura") or _nar.get("recomendaciones")):
+        _recs = "".join(f"<li>{_html.escape(r)}</li>" for r in _nar.get("recomendaciones", []))
+        _rec_html = (f'<div class="iarec-h">Recomendaciones</div><ul class="iarec">{_recs}</ul>'
+                     if _recs else "")
+        _lec = _html.escape(_nar.get("lectura", ""))
+        _body = (f'<p class="ialec">{_lec}</p>' if _lec else "") + _rec_html
+        st.markdown(_IA_CSS + f'<div class="iaread"><div class="iah">🧠 Lectura del analista IA</div>'
+                    f'{_body}</div>', unsafe_allow_html=True)
+    else:
+        # Fallback sin IA: los insights templados (los mismos del informe PDF).
+        try:
+            _fb = [str(x) for x in _insights(m, dfg, valor, base, cname, vlabel, dim_label)][:4]
+        except Exception:
+            _fb = []
+        if _fb:
+            _li = "".join(f"<li>{_html.escape(x)}</li>" for x in _fb)
+            st.markdown(_IA_CSS + '<div class="iaread"><div class="iah">Lectura</div>'
+                        f'<ul class="iarec">{_li}</ul></div>', unsafe_allow_html=True)
 
 # --- Exportables: PDF + Excel (mismo informe, dos formatos) ---
 _maxv = float(dfg["VALOR"].max()) or 1.0
